@@ -28,6 +28,7 @@ class RoadFragment:
 class Road:
     def __init__(self, id_, cell, begin, end):
         self.id_ = id_
+        self.parent_id = id_ # for find-union
         self.cells = set([cell])
         self.begin = begin
         self.end = end
@@ -80,7 +81,9 @@ class Board:
         # FIXME: don't need it anymore
         self.cards = dict()
 
-        # ((x,y),s) -> Road
+        # ((x,y),s) -> road id
+        self.road_ids = dict()
+        # road id -> Road
         self.roads = dict()
         self.last = None
 
@@ -113,20 +116,51 @@ class Board:
         for r in card.resources:
             if r.code() == 'r':
                 road = Road(id_=(xy,r.begin), cell=xy, begin=r.begin, end=r.end)
-                self.roads[(xy,r.begin)] = road
+                self.road_ids[(xy,r.begin)] = (xy,r.begin)
 
                 if r.end:
-                    self.roads[(xy, r.end)] = road
+                    self.road_ids[(xy, r.end)] = (xy,r.begin)
+
+                self.roads[(xy,r.begin)] = road
+
+                self.maybe_merge(xy,r.begin)
+                # FIXME: ugly!
+                if r.end:
+                    self.maybe_merge(xy,r.end)
 
         return True
 
 
     def find_resources(self, xy, side):
         result = []
-        r = self.roads.get((xy,side))
+        r = self.find_road(xy,side)
         if r:
             result.append(r.code())
         return result
+
+
+    def maybe_merge(self, xy, side):
+        # FIXME: not very optimal: should we pass r0 as a param here?
+        r0 = self.find_road(xy,side)
+        if not r0:
+            raise ValueError('No road at ' + str(xy) + ' ' + side)
+        r1 = self.find_road(*self.adjacent(xy,side))
+        if not r1:
+            return
+
+        if r0 == r1:
+            return
+
+        # FIXME: use optimized find-union (ranking + compacting)
+        self.merge(r0, r1)
+
+
+    # merge road0 TO road1
+    def merge(self, road0, road1):
+        self.road_ids[road0.parent_id] = road1.parent_id
+        road1.cells = road1.cells.union(road0.cells)
+        road1.tokens += road0.tokens
+        del self.roads[road0.id_]
 
 
     def adjacent(self, (x,y), side):
@@ -156,7 +190,16 @@ class Board:
         return sorted(side1) == sorted(side2)
 
     def find_road(self, xy, s):
-        r = self.roads.get((xy,s))
+        x1y1s1 = xy,s
+        while True:
+            x1y1s1 = self.road_ids.get((xy,s))
+            if not x1y1s1:
+                break
+            if x1y1s1 == (xy,s):
+                break
+            xy,s = x1y1s1
+
+        r = self.roads.get(x1y1s1)
         return r
 
 
@@ -242,6 +285,12 @@ class CarcassoneTest(unittest.TestCase):
 #        self.assertFalse(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
+
+        road1 = board.find_road((0,-1), 'n')
+        road2 = board.find_road((0,0), 's')
+        self.assertTrue(road1)
+        self.assertEqual(road1, road2)
+        self.assertEqual(len(road1.cells), 2)
 
 
 if __name__ == '__main__':
