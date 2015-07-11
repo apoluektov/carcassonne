@@ -68,7 +68,7 @@ class Card:
                 end = map_sides.get(cr.end)
             result_resources.append(RoadFragment(begin,end))
         return Card(result_resources)
-        
+
 
 def rotate(l,n):
     return l[n:] + l[:n]
@@ -115,7 +115,8 @@ class Board:
 
         for r in card.resources:
             if r.code() == 'r':
-                road = Road(id_=(xy,r.begin), cell=xy, begin=r.begin, end=r.end)
+                road = Road(id_=(xy,r.begin), cell=xy, begin=(xy,r.begin), end=(xy,r.end))
+
                 self.road_ids[(xy,r.begin)] = (xy,r.begin)
 
                 if r.end:
@@ -129,6 +130,17 @@ class Board:
                     self.maybe_merge(xy,r.end)
 
         return True
+
+
+    def handle_closed(self):
+        # FIXME: super inefficient
+        for r in self.roads.values():
+            if r.contains(self.last):
+                if not r.begin[1] and not r.end[1]:
+                    # FIXME: handle multiple owners
+                    if r.tokens:
+                        r.tokens[0].score += len(r.cells)
+                        r.tokens = []
 
 
     def find_resources(self, xy, side):
@@ -152,14 +164,28 @@ class Board:
             return
 
         # FIXME: use optimized find-union (ranking + compacting)
-        self.merge(r0, r1)
+        self.merge(r0, r1, (xy,side), self.adjacent(xy,side))
 
 
     # merge road0 TO road1
-    def merge(self, road0, road1):
+    def merge(self, road0, road1, coord0, coord1):
         self.road_ids[road0.parent_id] = road1.parent_id
         road1.cells = road1.cells.union(road0.cells)
         road1.tokens += road0.tokens
+
+        new_limit = None
+        if coord0 == road0.begin:
+            new_limit = road0.end
+        else:
+            new_limit = road0.begin
+
+        if coord1 == road1.begin:
+            road1.begin = new_limit
+        else:
+            road1.end = new_limit
+
+        print road1.begin, road1.end
+
         del self.roads[road0.id_]
 
 
@@ -167,7 +193,7 @@ class Board:
         # FIXME: const static data; move so that it is only initialized once
         sides = 'enws'
         adj_sides = 'wsen'
-        deltas = [(1,0), (0,1), (-1,0), (0,-1)]        
+        deltas = [(1,0), (0,1), (-1,0), (0,-1)]
         d = dict(zip(sides, range(0,4)))
 
         idx = d[side]
@@ -219,7 +245,7 @@ class CarcassoneTest(unittest.TestCase):
         # put a card and don't claim any resource
         # the card should be put
         # the score should not change
-        card0 = Card([RoadFragment('n', 's')])
+        card0 = Card([RoadFragment('s')])
         status = board.add_card(card0, (0,0))
         self.assertTrue(status)
         self.assertEqual(p0.score, 0)
@@ -274,14 +300,13 @@ class CarcassoneTest(unittest.TestCase):
 #        self.assertEqual(p0.score, 1)
         self.assertEqual(p1.score, 0)
 
-        card4 = Card([RoadFragment('e', 'w')])
+        card4 = Card([RoadFragment('w')])
         status = board.add_card(Card.rotated(card4, 3), (0,-1))
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.find_road((0,-1), 'n'), p1)
-        # road already claimed by p0
+        status = board.put_token(board.find_road((0,-1), 'n'), p0)
 #        self.assertFalse(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
@@ -291,6 +316,11 @@ class CarcassoneTest(unittest.TestCase):
         self.assertTrue(road1)
         self.assertEqual(road1, road2)
         self.assertEqual(len(road1.cells), 2)
+
+        board.handle_closed()
+        self.assertEqual(p0.score, 2)
+        self.assertEqual(p1.score, 0)
+
 
 
 if __name__ == '__main__':
