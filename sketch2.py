@@ -40,6 +40,22 @@ class Road:
     def contains(self, xy):
         return xy in self.cells
 
+    def close(self):
+        if self.tokens:
+            d = defaultdict(int)
+            for t in self.tokens:
+                d[t] += 1
+            owners = sorted([(v,k) for k,v in d.items()], reverse=True)
+            max_num_tokens = owners[0][0]
+            for num_tokens,player in owners:
+                if num_tokens == max_num_tokens:
+                    player.score += len(self.cells)
+                else:
+                    break
+
+            self.tokens = []
+
+
 
 class Card:
     # resources is the list of resources
@@ -137,10 +153,7 @@ class Board:
         for r in self.roads.values():
             if r.contains(self.last):
                 if not r.begin[1] and not r.end[1]:
-                    # FIXME: handle multiple owners
-                    if r.tokens:
-                        r.tokens[0].score += len(r.cells)
-                        r.tokens = []
+                    r.close()
 
 
     def find_resources(self, xy, side):
@@ -183,8 +196,6 @@ class Board:
             road1.begin = new_limit
         else:
             road1.end = new_limit
-
-        print road1.begin, road1.end
 
         del self.roads[road0.id_]
 
@@ -245,7 +256,7 @@ class CarcassoneTest(unittest.TestCase):
         # put a card and don't claim any resource
         # the card should be put
         # the score should not change
-        card0 = Card([RoadFragment('s')])
+        card0 = Card([RoadFragment('s', 'n')])
         status = board.add_card(card0, (0,0))
         self.assertTrue(status)
         self.assertEqual(p0.score, 0)
@@ -307,21 +318,41 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(p1.score, 0)
 
         status = board.put_token(board.find_road((0,-1), 'n'), p0)
-#        self.assertFalse(status)
+        self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
+
+        card = Card([RoadFragment('s')])
+        status = board.add_card(card, (0,1))
+        self.assertTrue(status)
 
         road1 = board.find_road((0,-1), 'n')
         road2 = board.find_road((0,0), 's')
         self.assertTrue(road1)
         self.assertEqual(road1, road2)
-        self.assertEqual(len(road1.cells), 2)
+        self.assertEqual(len(road1.cells), 3)
 
         board.handle_closed()
-        self.assertEqual(p0.score, 2)
+        self.assertEqual(p0.score, 3)
         self.assertEqual(p1.score, 0)
 
+        card = Card([RoadFragment('s')])
+        board.add_card(card, (-1,1))
+        status = board.put_token(board.find_road((-1,1), 's'), p0)
+        self.assertTrue(status)
+        card = Card([RoadFragment('n')])
+        board.add_card(card, (-1,-1))
+        status = board.put_token(board.find_road((-1,-1), 'n'), p1)
+        self.assertTrue(status)
+        # NB: merges to 2 other roads
+        card = Card([RoadFragment('n', 's')])
+        board.add_card(card, (-1,0))
 
+        board.handle_closed()
+        road = board.find_road((-1,0), 's')
+        self.assertEqual(len(road.cells), 3)
+        self.assertEqual(p0.score, 6)
+        self.assertEqual(p1.score, 3)
 
 if __name__ == '__main__':
     unittest.main()
