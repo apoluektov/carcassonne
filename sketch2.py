@@ -25,6 +25,30 @@ class RoadFragment:
         return '<road-fragment: ' + self.begin + '->' + self.end + ' >'
 
 
+class MonasteryFragment:
+    def code(self):
+        return 'M'
+
+
+class Monastery:
+    def __init__(self, cell):
+        self.cell = cell
+        self.adjacent = []
+        self.tokens = []
+
+    def code(self):
+        return 'M'
+
+    def score(self):
+        return 1 + len(self.adjacent)
+
+    def contains(self, xy):
+        return self.cell == xy
+
+    def is_closed(self):
+        return self.score() == 9
+
+
 class Road:
     def __init__(self, id_, cell, begin, end):
         self.id_ = id_
@@ -37,24 +61,29 @@ class Road:
     def code(self):
         return 'r'
 
+    def score(self):
+        return len(self.cells)
+
     def contains(self, xy):
         return xy in self.cells
 
-    def close(self):
-        if self.tokens:
-            d = defaultdict(int)
-            for t in self.tokens:
-                d[t] += 1
-            owners = sorted([(v,k) for k,v in d.items()], reverse=True)
-            max_num_tokens = owners[0][0]
-            for num_tokens,player in owners:
-                if num_tokens == max_num_tokens:
-                    player.score += len(self.cells)
-                else:
-                    break
+    def is_closed(self):
+        return (not self.begin[1]) and (not self.end[1])
 
-            self.tokens = []
 
+def close(resource):
+    if resource.tokens:
+        d = defaultdict(int)
+        for t in resource.tokens:
+            d[t] += 1
+        owners = sorted([(v,k) for k,v in d.items()], reverse=True)
+        max_num_tokens = owners[0][0]
+        for num_tokens,player in owners:
+            if num_tokens == max_num_tokens:
+                player.score += resource.score()
+            else:
+                break
+    resource.tokens = []
 
 
 class Card:
@@ -68,8 +97,10 @@ class Card:
                 self.sides[r.begin].append('r')
                 if r.end:
                     self.sides[r.end].append('r')
+            elif c == 'M':
+                pass
             elif c:
-                raise ValueError('Only roads are supported at the moment')
+                raise ValueError('Only roads and monasteries are supported at the moment')
 
     # FIXME: this is crappy code
     @staticmethod
@@ -97,10 +128,14 @@ class Board:
         # FIXME: don't need it anymore
         self.cards = dict()
 
+        # (x,y) -> Monastery
+        self.monasteries = dict()
+
         # ((x,y),s) -> road id
         self.road_ids = dict()
         # road id -> Road
         self.roads = dict()
+
         self.last = None
 
     def add_card(self, card, xy):
@@ -129,8 +164,16 @@ class Board:
         self.cards[xy] = card
         self.last = xy
 
+        # handle adjacent monasteries
+        for x1y1 in self.neighbors(xy):
+            m = self.find_monastery(x1y1)
+            if m:
+                m.adjacent.append(xy)
+
         for r in card.resources:
-            if r.code() == 'r':
+            if r.code() == 'M':
+                self.monasteries[xy] = Monastery(xy)
+            elif r.code() == 'r':
                 road = Road(id_=(xy,r.begin), cell=xy, begin=(xy,r.begin), end=(xy,r.end))
 
                 self.road_ids[(xy,r.begin)] = (xy,r.begin)
@@ -149,11 +192,29 @@ class Board:
 
 
     def handle_closed(self):
-        # FIXME: super inefficient
-        for r in self.roads.values():
-            if r.contains(self.last):
-                if not r.begin[1] and not r.end[1]:
-                    r.close()
+        roads = []
+        monasteries = []
+
+        # check roads and monasteries that go through self.last
+        for side in 'enws':
+            r = self.find_road(self.last, side)
+            if r:
+                roads.append(r)
+
+        cells = self.neighbors(self.last)
+        cells.append(self.last)
+        for c in cells:
+            m = self.find_monastery(c)
+            if m:
+                monasteries.append(m)
+
+        for r in roads:
+            if r.is_closed():
+                close(r)
+
+        for m in monasteries:
+            if m.is_closed():
+                close(m)
 
 
     def find_resources(self, xy, side):
@@ -212,6 +273,10 @@ class Board:
         return ((x+dx,y+dy), adj_sides[idx])
 
 
+    def neighbors(self, (x, y)):
+        return [(x-1,y-1), (x,y-1), (x+1,y-1), (x-1,y), (x+1,y), (x-1,y+1), (x,y+1), (x+1,y+1)]
+
+
     def put_token(self, resource, player):
         if not resource:
             return False
@@ -225,6 +290,9 @@ class Board:
     def do_sides_match(self, side1, side2):
         # FIXME: at least at the moment
         return sorted(side1) == sorted(side2)
+
+    def find_monastery(self, xy):
+        return self.monasteries.get(xy)
 
     def find_road(self, xy, s):
         x1y1s1 = xy,s
@@ -256,11 +324,18 @@ class CarcassoneTest(unittest.TestCase):
         # put a card and don't claim any resource
         # the card should be put
         # the score should not change
-        card0 = Card([RoadFragment('s', 'n')])
+        card0 = Card([RoadFragment('s', 'n'), MonasteryFragment()])
         status = board.add_card(card0, (0,0))
         self.assertTrue(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
+
+        monastery = board.find_monastery((0,0))
+        self.assertTrue(monastery)
+        self.assertEqual(monastery.score(), 1)
+
+        status = board.put_token(monastery, p0)
+        self.assertTrue(status)
 
         # put another card to the same position
         # the card should not be put there
@@ -330,7 +405,7 @@ class CarcassoneTest(unittest.TestCase):
         road2 = board.find_road((0,0), 's')
         self.assertTrue(road1)
         self.assertEqual(road1, road2)
-        self.assertEqual(len(road1.cells), 3)
+        self.assertEqual(road1.score(), 3)
 
         board.handle_closed()
         self.assertEqual(p0.score, 3)
@@ -350,9 +425,23 @@ class CarcassoneTest(unittest.TestCase):
 
         board.handle_closed()
         road = board.find_road((-1,0), 's')
-        self.assertEqual(len(road.cells), 3)
+        self.assertEqual(road.score(), 3)
         self.assertEqual(p0.score, 6)
         self.assertEqual(p1.score, 3)
+
+        self.assertEqual(monastery.score(), 7)
+
+        card = Card([RoadFragment('n', 's')])
+        board.add_card(card, (1,1))
+        card = Card([RoadFragment('n', 's')])
+        board.add_card(card, (1,-1))
+
+        board.handle_closed()
+        self.assertTrue(monastery.is_closed())
+
+        self.assertEqual(monastery.score(), 9)
+        self.assertEqual(p0.score, 15)
+
 
 if __name__ == '__main__':
     unittest.main()
