@@ -60,6 +60,12 @@ class Road:
         self.sides = sides[:]
         self.tokens = []
 
+    @classmethod
+    def from_fragment(cls, fragment, xy):
+        sides = [(xy,s) for s in fragment.sides]
+        id_ = sides[0]
+        return cls(id_=id_, cell=xy, sides=sides)
+
     def code(self):
         return 'r'
 
@@ -72,6 +78,12 @@ class Road:
     def is_closed(self):
         return not self.sides
 
+    # FIXME: I'm really unhappy that merging is now split between objects and Graph
+    # FIXME: actually, I see it as a sign that maybe sides really belong to Graph
+    def merge_into(self, dest):
+        dest.cells = dest.cells.union(self.cells)
+        dest.tokens += self.tokens
+
 
 class Castle:
     def __init__(self, id_, cell, sides, shield=False):
@@ -81,6 +93,12 @@ class Castle:
         self.sides = sides
         self.shields = int(shield)
         self.tokens = []
+
+    @classmethod
+    def from_fragment(cls, fragment, xy):
+        sides = [(xy,s) for s in fragment.sides]
+        id_ = sides[0]
+        return cls(id_=id_, cell=xy, sides=sides, shield=fragment.shield)
 
     def code(self):
         return 'c'
@@ -94,6 +112,12 @@ class Castle:
 
     def is_closed(self):
         return not self.sides
+
+    def merge_into(self, dest):
+        dest.cells = dest.cells.union(self.cells)
+        dest.tokens += self.tokens
+        dest.shields += self.shields
+
 
 
 def close(resource):
@@ -157,6 +181,92 @@ def rotate(l,n):
     return l[n:] + l[:n]
 
 
+class Graph:
+    def __init__(self):
+        # ((x,y),s) -> id
+        self.ids = dict()
+        # id -> obj
+        self.objects = dict()
+
+    def add(self, obj):
+        for s in obj.sides:
+            self.ids[s] = obj.id_
+
+        self.objects[obj.id_] = obj
+
+        for s in obj.sides[:]:
+            self.maybe_merge(*s)
+
+
+    def find(self, xy, s):
+        x1y1s1 = xy,s
+        while True:
+            x1y1s1 = self.ids.get((xy,s))
+            if not x1y1s1:
+                break
+            if x1y1s1 == (xy,s):
+                break
+            xy,s = x1y1s1
+
+        r = self.objects.get(x1y1s1)
+        return r
+
+
+    def maybe_merge(self, xy, side):
+        # FIXME: not very optimal: should we pass r0 as a param here?
+        obj0 = self.find(xy,side)
+        if not obj0:
+            raise ValueError('No object at ' + str(xy) + ' ' + side)
+        obj1 = self.find(*adjacent(xy,side))
+        if not obj1:
+            return
+
+        if obj0 == obj1:
+            return
+
+        self.merge(obj0, obj1)
+
+
+    def merge(self, obj, destObj):
+        obj.merge_into(destObj)
+
+        # FIXME: use optimized find-union (ranking + compacting)
+        self.ids[obj.parent_id] = destObj.parent_id
+
+        new_sides = []
+
+        i,j = 0,0
+        while i < len(obj.sides):
+            s0 = obj.sides[i]
+            while j < len(destObj.sides):
+                s1 = destObj.sides[j]
+                if s0 == adjacent(*s1):
+                    del obj.sides[i]
+                    del destObj.sides[j]
+                    # FIXME: fucking ugly!!!
+                    i -= 1
+                    break
+                else:
+                    j += 1
+            i += 1
+
+        destObj.sides += obj.sides
+
+        del self.objects[obj.id_]
+
+
+def adjacent((x,y), side):
+    # FIXME: const static data; move so that it is only initialized once
+    sides = 'enws'
+    adj_sides = 'wsen'
+    deltas = [(1,0), (0,1), (-1,0), (0,-1)]
+    d = dict(zip(sides, range(0,4)))
+
+    idx = d[side]
+    dx,dy = deltas[idx]
+    return ((x+dx,y+dy), adj_sides[idx])
+
+
 class Board:
     def __init__(self, game):
         self.game = game
@@ -167,13 +277,8 @@ class Board:
         # (x,y) -> Monastery
         self.monasteries = dict()
 
-        # ((x,y),s) -> road id
-        self.road_ids = dict()
-        # road id -> Road
-        self.roads = dict()
-
-        self.castle_ids = dict()
-        self.castles = dict()
+        self.roads = Graph()
+        self.castles = Graph()
 
         self.last = None
 
@@ -187,7 +292,7 @@ class Board:
 
         has_neighbor = False
         for s in sides:
-            (x1,y1),s1 = self.adjacent(xy,s)
+            (x1,y1),s1 = adjacent(xy,s)
             neighbor = self.cards.get((x1,y1))
             if neighbor:
                 has_neighbor = True
@@ -213,29 +318,11 @@ class Board:
             if r.code() == 'M':
                 self.monasteries[xy] = Monastery(xy)
             elif r.code() == 'r':
-                sides = [(xy,s) for s in r.sides]
-                id_ = sides[0]
-                road = Road(id_=id_, cell=xy, sides=sides)
-
-                for s in sides:
-                    self.road_ids[s] = id_
-
-                self.roads[id_] = road
-
-                for s in sides:
-                    self.maybe_merge(*s)
+                road = Road.from_fragment(r, xy)
+                self.roads.add(road)
             elif r.code() == 'c':
-                sides = [(xy,s) for s in r.sides]
-                id_ = sides[0]
-                road = Castle(id_=id_, cell=xy, sides=sides, shield=r.shield)
-
-                for s in sides:
-                    self.castle_ids[s] = id_
-
-                self.castles[id_] = road
-
-                for s in sides:
-                    self.maybe_merge_castles(*s)
+                castle = Castle.from_fragment(r, xy)
+                self.castles.add(castle)
 
         return True
 
@@ -245,13 +332,12 @@ class Board:
         castles = []
         monasteries = []
 
-        # check roads and monasteries that go through self.last
         for side in 'enws':
-            r = self.find_road(self.last, side)
+            r = self.roads.find(self.last, side)
             if r:
                 roads.append(r)
 
-            c = self.find_castle(self.last, side)
+            c = self.castles.find(self.last, side)
             if c:
                 castles.append(c)
 
@@ -277,117 +363,18 @@ class Board:
 
     def find_resources(self, xy, side):
         result = []
-        r = self.find_road(xy,side)
+        r = self.roads.find(xy,side)
         if r:
             result.append(r.code())
-        c = self.find_castle(xy,side)
+        c = self.castles.find(xy,side)
         if c:
             result.append(c.code())
         return result
 
 
-    def maybe_merge(self, xy, side):
-        # FIXME: not very optimal: should we pass r0 as a param here?
-        r0 = self.find_road(xy,side)
-        if not r0:
-            raise ValueError('No road at ' + str(xy) + ' ' + side)
-        r1 = self.find_road(*self.adjacent(xy,side))
-        if not r1:
-            return
-
-        if r0 == r1:
-            return
-
-        # FIXME: use optimized find-union (ranking + compacting)
-        self.merge(r0, r1, (xy,side), self.adjacent(xy,side))
-
-
-    # merge road0 TO road1
-    def merge(self, road0, road1, coord0, coord1):
-        self.road_ids[road0.parent_id] = road1.parent_id
-        road1.cells = road1.cells.union(road0.cells)
-        road1.tokens += road0.tokens
-
-        new_sides = []
-
-        i,j = 0,0
-        while i < len(road0.sides):
-            s0 = road0.sides[i]
-            while j < len(road1.sides):
-                s1 = road1.sides[j]
-                if s0 == self.adjacent(*s1):
-                    del road0.sides[i]
-                    del road1.sides[j]
-                    # FIXME: fucking ugly!!!
-                    i -= 1
-                    break
-                else:
-                    j += 1
-            i += 1
-
-        road1.sides += road0.sides
-
-        del self.roads[road0.id_]
-
-
-    # FIXME: copy-paste; factor me out!!!
-
-    def maybe_merge_castles(self, xy, side):
-        # FIXME: not very optimal: should we pass r0 as a param here?
-        r0 = self.find_castle(xy,side)
-        if not r0:
-            raise ValueError('No castle at ' + str(xy) + ' ' + side)
-        r1 = self.find_castle(*self.adjacent(xy,side))
-        if not r1:
-            return
-
-        if r0 == r1:
-            return
-
-        # FIXME: use optimized find-union (ranking + compacting)
-        self.merge_castles(r0, r1, (xy,side), self.adjacent(xy,side))
-
-
-    # merge road0 TO road1
-    def merge_castles(self, road0, road1, coord0, coord1):
-        self.castle_ids[road0.parent_id] = road1.parent_id
-        road1.cells = road1.cells.union(road0.cells)
-        road1.tokens += road0.tokens
-        road1.shields += road0.shields
-
-        new_sides = []
-
-        i,j = 0,0
-        while i < len(road0.sides):
-            s0 = road0.sides[i]
-            while j < len(road1.sides):
-                s1 = road1.sides[j]
-                if s0 == self.adjacent(*s1):
-                    del road0.sides[i]
-                    del road1.sides[j]
-                    # FIXME: fucking ugly!!!
-                    i -= 1
-                    break
-                else:
-                    j += 1
-            i += 1
-
-        road1.sides += road0.sides
-
-        del self.castles[road0.id_]
-
-
-    def adjacent(self, (x,y), side):
-        # FIXME: const static data; move so that it is only initialized once
-        sides = 'enws'
-        adj_sides = 'wsen'
-        deltas = [(1,0), (0,1), (-1,0), (0,-1)]
-        d = dict(zip(sides, range(0,4)))
-
-        idx = d[side]
-        dx,dy = deltas[idx]
-        return ((x+dx,y+dy), adj_sides[idx])
-
+#    def merge_to_neighbors(self, res):
+#        sides = res.sides[:]
+        
 
     def neighbors(self, (x, y)):
         return [(x-1,y-1), (x,y-1), (x+1,y-1), (x-1,y), (x+1,y), (x-1,y+1), (x,y+1), (x+1,y+1)]
@@ -409,32 +396,6 @@ class Board:
 
     def find_monastery(self, xy):
         return self.monasteries.get(xy)
-
-    def find_castle(self, xy, s):
-        x1y1s1 = xy,s
-        while True:
-            x1y1s1 = self.castle_ids.get((xy,s))
-            if not x1y1s1:
-                break
-            if x1y1s1 == (xy,s):
-                break
-            xy,s = x1y1s1
-
-        r = self.castles.get(x1y1s1)
-        return r
-
-    def find_road(self, xy, s):
-        x1y1s1 = xy,s
-        while True:
-            x1y1s1 = self.road_ids.get((xy,s))
-            if not x1y1s1:
-                break
-            if x1y1s1 == (xy,s):
-                break
-            xy,s = x1y1s1
-
-        r = self.roads.get(x1y1s1)
-        return r
 
 
 class CarcassoneTest(unittest.TestCase):
@@ -493,19 +454,19 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.find_road((1,0), 'e'), p0)
+        status = board.put_token(board.roads.find((1,0), 'e'), p0)
         # there is no road at given coords
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.find_road((0,0), 'n'), p0)
+        status = board.put_token(board.roads.find((0,0), 'n'), p0)
         # (0,0) was not the last turn
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.find_road((1,0), 'n'), p0)
+        status = board.put_token(board.roads.find((1,0), 'n'), p0)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 1)
         self.assertEqual(p1.score, 0)
@@ -522,7 +483,7 @@ class CarcassoneTest(unittest.TestCase):
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.find_road((0,-1), 'n'), p0)
+        status = board.put_token(board.roads.find((0,-1), 'n'), p0)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
@@ -531,8 +492,8 @@ class CarcassoneTest(unittest.TestCase):
         status = board.add_card(card, (0,1))
         self.assertTrue(status)
 
-        road1 = board.find_road((0,-1), 'n')
-        road2 = board.find_road((0,0), 's')
+        road1 = board.roads.find((0,-1), 'n')
+        road2 = board.roads.find((0,0), 's')
         self.assertTrue(road1)
         self.assertEqual(road1, road2)
         self.assertEqual(road1.score(), 3)
@@ -543,18 +504,18 @@ class CarcassoneTest(unittest.TestCase):
 
         card = Card([RoadFragment(['s'])])
         board.add_card(card, (-1,1))
-        status = board.put_token(board.find_road((-1,1), 's'), p0)
+        status = board.put_token(board.roads.find((-1,1), 's'), p0)
         self.assertTrue(status)
         card = Card([RoadFragment(['n'])])
         board.add_card(card, (-1,-1))
-        status = board.put_token(board.find_road((-1,-1), 'n'), p1)
+        status = board.put_token(board.roads.find((-1,-1), 'n'), p1)
         self.assertTrue(status)
         # NB: merges to 2 other roads
         card = Card([RoadFragment(['n', 's'])])
         board.add_card(card, (-1,0))
 
         board.handle_closed()
-        road = board.find_road((-1,0), 's')
+        road = board.roads.find((-1,0), 's')
         self.assertEqual(road.score(), 3)
         self.assertEqual(p0.score, 6)
         self.assertEqual(p1.score, 3)
@@ -589,11 +550,11 @@ class CarcassoneTest(unittest.TestCase):
         status = board.add_card(Card.rotated(card, 3), (-1,0))
         self.assertTrue(status)
 
-        status = board.put_token(board.find_castle((-1,0), 'e'), p0)
+        status = board.put_token(board.castles.find((-1,0), 'e'), p0)
         self.assertTrue(status)
 
-        castle1 = board.find_castle((0,0), 'w')
-        castle2 = board.find_castle((-1,0), 'e')
+        castle1 = board.castles.find((0,0), 'w')
+        castle2 = board.castles.find((-1,0), 'e')
         self.assertTrue(castle1)
         self.assertEqual(castle1, castle2)
         self.assertFalse(castle1.is_closed())
