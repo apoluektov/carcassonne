@@ -2,13 +2,14 @@ import unittest
 from collections import defaultdict
 
 class Player:
-    def __init__(self):
+    def __init__(self, tokens_count):
         self.score = 0
+        self.tokens_count = tokens_count
 
 
 class Game:
-    def __init__(self, num_of_players):
-        self.players = [Player() for i in range(num_of_players)]
+    def __init__(self, *players):
+        self.players = list(players)
 
 # represents road fragment on a card
 class RoadFragment:
@@ -205,6 +206,8 @@ def close(resource):
                 player.score += resource.score()
             else:
                 break
+    for t in resource.tokens:
+        t.tokens_count += 1
     resource.tokens = []
 
 
@@ -456,23 +459,22 @@ class Board:
             result.append(m.code())
         return result
 
-
-#    def merge_to_neighbors(self, res):
-#        sides = res.sides[:]
-        
-
     def neighbors(self, (x, y)):
         return [(x-1,y-1), (x,y-1), (x+1,y-1), (x-1,y), (x+1,y), (x-1,y+1), (x,y+1), (x+1,y+1)]
 
-
+    # TODO: return status -- why the token could not be put
     def put_token(self, resource, player):
+        if player.tokens_count == 0:
+            return False
         if not resource:
             return False
         if not resource.contains(self.last):
             return False
         if resource.tokens:
             return False
+
         resource.tokens.append(player)
+        player.tokens_count -= 1
         return True
 
     def do_sides_match(self, side1, side2):
@@ -487,15 +489,11 @@ class CarcassoneTest(unittest.TestCase):
 
     # test roads and monasteries
     def test1(self):
-        # TODO: keyword param
-        # 2 is num of players
-        game = Game(2)
-        # FIXME: should create board with init piece at center
-        board = Board(game)
-        # FIXME: also, should get a card from the suffled deck
+        p0 = Player(tokens_count=5)
+        p1 = Player(tokens_count=5)
 
-        p0 = game.players[0]
-        p1 = game.players[1]
+        game = Game(p0, p1)
+        board = Board(game)
 
         # put a card and don't claim any resource
         # the card should be put
@@ -621,11 +619,11 @@ class CarcassoneTest(unittest.TestCase):
 
     # add castles and meadows
     def test2(self):
-        game = Game(2)
-        board = Board(game)
+        p0 = Player(tokens_count=2)
+        p1 = Player(tokens_count=2)
 
-        p0 = game.players[0]
-        p1 = game.players[1]
+        game = Game(p0, p1)
+        board = Board(game)
 
         card = Card([CastleFragment(['e']), CastleFragment(['w']), MeadowFragment(['n', 's'])])
         status = board.add_card(card, (0,0))
@@ -680,6 +678,14 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(meadow1, meadow2)
         self.assertEqual(meadow1.score(), 3)
 
+        card = Card([CastleFragment(['w']), MeadowFragment(['n', 'e', 's'])])
+        status = board.add_card(card, (1,0))
+        self.assertTrue(status)
+
+        status = board.put_token(board.meadows.find((1,0), 'n'), p1)
+        # player 1 is out of tokens
+        self.assertFalse(status)
+        self.assertEqual(p0.tokens_count, 2)
 
 if __name__ == '__main__':
     unittest.main()
