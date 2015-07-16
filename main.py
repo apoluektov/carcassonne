@@ -2,14 +2,76 @@ import unittest
 from collections import defaultdict
 
 class Player:
-    def __init__(self, tokens_count):
+    def __init__(self, token_count):
         self.score = 0
-        self.tokens_count = tokens_count
+        self.token_count = token_count
+        self.claimed_resource_ids = []
 
 
 class Game:
-    def __init__(self, *players):
-        self.players = list(players)
+    def __init__(self, players, board):
+        self.players = players
+        self.board = board
+
+    def find_claimed_resources(self):
+        result = set()
+        for p in self.players:
+            for res_id in p.claimed_resource_ids:
+                res = self.board.find_resource(res_id)
+                result.add(res)
+        return list(result)
+
+    # FIXME: name is crap
+    def find_largest_owners(self, res):
+        result = []
+        if res.tokens:
+            d = defaultdict(int)
+            for t in res.tokens:
+                d[t] += 1
+            owners = sorted([(v,k) for k,v in d.items()], reverse=True)
+            max_num_tokens = owners[0][0]
+            for num_tokens,player in owners:
+                if num_tokens == max_num_tokens:
+                    result.append(player)
+                else:
+                    break
+        return result
+
+
+    def on_turn_end(self):
+        resources = [r for r in self.find_claimed_resources() if r.is_closed()]
+        for res in resources:
+            owners = self.find_largest_owners(res)
+            for p in owners:
+                p.score += res.score()
+            for p in res.tokens:
+                p.token_count += 1
+
+            self._hack_unclaim_resource(res)
+
+
+    def on_game_end(self):
+        resources = self.find_claimed_resources()
+        for res in resources:
+            owners = self.find_largest_owners(res)
+            for p in owners:
+                p.score += res.score()
+            for p in res.tokens:
+                p.token_count += 1
+
+            # FIXME: brute force: using it here leads to O(R^2) behavior (where R is number of claimed resources)
+            # FIXME: fortunately R is quite small for Carcassonne
+            self._hack_unclaim_resource(res)
+
+
+    def _hack_unclaim_resource(self, res):
+        # FIXME: HACK: 'when in doubt, use brute force' (c)
+        for p in self.players:
+            for res_id in p.claimed_resource_ids:
+                res2 = self.board.find_resource(res_id)
+                if res2 == res:
+                    p.claimed_resource_ids.remove(res_id)
+
 
 # represents road fragment on a card
 class RoadFragment:
@@ -44,6 +106,7 @@ class MonasteryFragment:
 
 class Monastery:
     def __init__(self, cell):
+        self.id_ = cell
         self.cell = cell
         self.adjacent = []
         self.tokens = []
@@ -207,7 +270,7 @@ def close(resource):
             else:
                 break
     for t in resource.tokens:
-        t.tokens_count += 1
+        t.token_count += 1
     resource.tokens = []
 
 
@@ -349,8 +412,7 @@ def adjacent((x,y), side):
 
 
 class Board:
-    def __init__(self, game):
-        self.game = game
+    def __init__(self):
         # (x,y) -> Card
         # FIXME: don't need it anymore
         self.cards = dict()
@@ -411,39 +473,14 @@ class Board:
 
         return True
 
-
-    def handle_closed(self):
-        roads = []
-        castles = []
-        monasteries = []
-
-        for side in 'enws':
-            r = self.roads.find(self.last, side)
-            if r:
-                roads.append(r)
-
-            c = self.castles.find(self.last, side)
-            if c:
-                castles.append(c)
-
-        cells = self.neighbors(self.last)
-        cells.append(self.last)
-        for c in cells:
-            m = self.find_monastery(c)
-            if m:
-                monasteries.append(m)
-
-        for r in roads:
-            if r.is_closed():
-                close(r)
-
-        for c in castles:
-            if c.is_closed():
-                close(c)
-
-        for m in monasteries:
-            if m.is_closed():
-                close(m)
+    
+    def find_resource(self, res_id):
+        code,id_ = res_id
+        if code == 'M':
+            return self.monasteries.get(id_)
+        else:
+            objs = {'r': self.roads, 'c': self.castles, 'm': self.meadows}
+            return objs[code].find(*id_)
 
 
     def find_resources(self, xy, side):
@@ -464,7 +501,7 @@ class Board:
 
     # TODO: return status -- why the token could not be put
     def put_token(self, resource, player):
-        if player.tokens_count == 0:
+        if player.token_count == 0:
             return False
         if not resource:
             return False
@@ -474,7 +511,8 @@ class Board:
             return False
 
         resource.tokens.append(player)
-        player.tokens_count -= 1
+        player.claimed_resource_ids.append((resource.code(), resource.id_))
+        player.token_count -= 1
         return True
 
     def do_sides_match(self, side1, side2):
@@ -489,11 +527,11 @@ class CarcassoneTest(unittest.TestCase):
 
     # test roads and monasteries
     def test1(self):
-        p0 = Player(tokens_count=5)
-        p1 = Player(tokens_count=5)
+        p0 = Player(token_count=5)
+        p1 = Player(token_count=5)
 
-        game = Game(p0, p1)
-        board = Board(game)
+        board = Board()
+        game = Game([p0, p1], board)
 
         # put a card and don't claim any resource
         # the card should be put
@@ -581,7 +619,7 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(road1, road2)
         self.assertEqual(road1.score(), 3)
 
-        board.handle_closed()
+        game.on_turn_end()
         self.assertEqual(p0.score, 3)
         self.assertEqual(p1.score, 0)
 
@@ -597,7 +635,7 @@ class CarcassoneTest(unittest.TestCase):
         card = Card([RoadFragment(['n', 's'])])
         board.add_card(card, (-1,0))
 
-        board.handle_closed()
+        game.on_turn_end()
         road = board.roads.find((-1,0), 's')
         self.assertEqual(road.score(), 3)
         self.assertEqual(p0.score, 6)
@@ -610,7 +648,7 @@ class CarcassoneTest(unittest.TestCase):
         card = Card([RoadFragment(['n', 's'])])
         board.add_card(card, (1,-1))
 
-        board.handle_closed()
+        game.on_turn_end()
         self.assertTrue(monastery.is_closed())
 
         self.assertEqual(monastery.score(), 9)
@@ -619,11 +657,11 @@ class CarcassoneTest(unittest.TestCase):
 
     # add castles and meadows
     def test2(self):
-        p0 = Player(tokens_count=2)
-        p1 = Player(tokens_count=2)
+        p0 = Player(token_count=2)
+        p1 = Player(token_count=2)
 
-        game = Game(p0, p1)
-        board = Board(game)
+        board = Board()
+        game = Game([p0, p1], board)
 
         card = Card([CastleFragment(['e']), CastleFragment(['w']), MeadowFragment(['n', 's'])])
         status = board.add_card(card, (0,0))
@@ -662,7 +700,7 @@ class CarcassoneTest(unittest.TestCase):
         status = board.put_token(meadow2, p1)
         self.assertTrue(status)
 
-        board.handle_closed()
+        game.on_turn_end()
 
         self.assertEqual(p0.score, 8)
         self.assertEqual(p1.score, 0)
@@ -678,14 +716,18 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(meadow1, meadow2)
         self.assertEqual(meadow1.score(), 3)
 
-        card = Card([CastleFragment(['w']), MeadowFragment(['n', 'e', 's'])])
+        card = Card([CastleFragment(['w', 's']), MeadowFragment(['n', 'e'])])
         status = board.add_card(card, (1,0))
         self.assertTrue(status)
 
         status = board.put_token(board.meadows.find((1,0), 'n'), p1)
         # player 1 is out of tokens
         self.assertFalse(status)
-        self.assertEqual(p0.tokens_count, 2)
+        self.assertEqual(p0.token_count, 2)
+
+        game.on_game_end()
+        self.assertEqual(p0.score, 8)
+        self.assertEqual(p1.score, 3)
 
 if __name__ == '__main__':
     unittest.main()
