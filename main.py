@@ -100,14 +100,17 @@ class MeadowFragment:
 
 
 class MonasteryFragment:
+    def __init__(self):
+        self.sides = []
+
     def code(self):
         return 'M'
 
 
 class Monastery:
-    def __init__(self, cell):
-        self.id_ = cell
-        self.cell = cell
+    def __init__(self, xy):
+        self.id_ = xy
+        self.cell = xy
         self.adjacent = []
         self.tokens = []
 
@@ -125,18 +128,18 @@ class Monastery:
 
 
 class Road:
-    def __init__(self, id_, cell, sides):
+    def __init__(self, id_, xy, sides):
         self.id_ = id_
         self.parent_id = id_ # for find-union
-        self.cells = set([cell])
+        self.cells = set([xy])
         self.sides = sides[:]
         self.tokens = []
 
     @classmethod
-    def from_fragment(cls, fragment, xy):
-        sides = [(xy,s) for s in fragment.sides]
+    def from_fragment(cls, fragment, xy, orient):
+        sides = [(xy, rotate_ccw(s, orient)) for s in fragment.sides]
         id_ = sides[0]
-        return cls(id_=id_, cell=xy, sides=sides)
+        return cls(id_=id_, xy=xy, sides=sides)
 
     def code(self):
         return 'r'
@@ -158,19 +161,19 @@ class Road:
 
 
 class Castle:
-    def __init__(self, id_, cell, sides, shield=False):
+    def __init__(self, id_, xy, sides, shield=False):
         self.id_ = id_
         self.parent_id = id_
-        self.cells = set([cell])
+        self.cells = set([xy])
         self.sides = sides
         self.shields = int(shield)
         self.tokens = []
 
     @classmethod
-    def from_fragment(cls, fragment, xy):
-        sides = [(xy,s) for s in fragment.sides]
+    def from_fragment(cls, fragment, xy, orient):
+        sides = [(xy, rotate_ccw(s, orient)) for s in fragment.sides]
         id_ = sides[0]
-        return cls(id_=id_, cell=xy, sides=sides, shield=fragment.shield)
+        return cls(id_=id_, xy=xy, sides=sides, shield=fragment.shield)
 
     def code(self):
         return 'c'
@@ -192,25 +195,25 @@ class Castle:
 
 
 class Meadow:
-    def __init__(self, id_, cell, sides, castle_graph):
+    def __init__(self, id_, xy, sides, castle_graph):
         self.id_ = id_
         self.parent_id = id_
-        self.cells = set([cell])
+        self.cells = set([xy])
         self.sides = sides
         self.tokens = []
 
         self.castle_graph = castle_graph
         self.castle_ids = set()
         for s in self.adjacent_sides():
-            c = self.castle_graph.find_root_id(cell, s)
+            c = self.castle_graph.find_root_id((xy, s))
             if c:
                 self.castle_ids.add(c)
 
     @classmethod
-    def from_fragment(cls, fragment, xy, castle_graph):
-        sides = [(xy,s) for s in fragment.sides]
+    def from_fragment(cls, fragment, xy, orient, castle_graph):
+        sides = [(xy, rotate_ccw(s, orient)) for s in fragment.sides]
         id_ = sides[0]
-        return cls(id_=id_, cell=xy, sides=sides, castle_graph=castle_graph)
+        return cls(id_=id_, xy=xy, sides=sides, castle_graph=castle_graph)
 
     def adjacent_sides(self):
         # FIXME: exclude the sides that belong to this meadow itself
@@ -232,7 +235,7 @@ class Meadow:
     def score(self):
         result = 0
         for c in self.castle_ids:
-            castle = self.castle_graph.find(*c)
+            castle = self.castle_graph.get(c)
             if not castle:
                 raise ValueError('No castle: something went wrong')
             if castle.is_closed():
@@ -250,76 +253,34 @@ class Meadow:
         dest.tokens += self.tokens
         new_castles = set()
         for c in self.castle_ids:
-            new_castles.add(self.castle_graph.find_root_id(*c))
+            new_castles.add(self.castle_graph.find_root_id(c))
         for c in dest.castle_ids:
-            new_castles.add(self.castle_graph.find_root_id(*c))
+            new_castles.add(self.castle_graph.find_root_id(c))
 
         dest.castles = new_castles
-
-
-def close(resource):
-    if resource.tokens:
-        d = defaultdict(int)
-        for t in resource.tokens:
-            d[t] += 1
-        owners = sorted([(v,k) for k,v in d.items()], reverse=True)
-        max_num_tokens = owners[0][0]
-        for num_tokens,player in owners:
-            if num_tokens == max_num_tokens:
-                player.score += resource.score()
-            else:
-                break
-    for t in resource.tokens:
-        t.token_count += 1
-    resource.tokens = []
 
 
 class Card:
     # resources is the list of resources
     def __init__(self, resources):
         self.resources = resources
-        self.sides = defaultdict(list)
-        for i,r in enumerate(self.resources):
+
+    def get_borders(self, orient):
+        result = defaultdict(list)
+        for r in self.resources:
             c = r.code()
-            if c == 'M':
-                pass
-            else:
-                for s in r.sides:
-                    self.sides[s].append(c)
+            for s in r.sides:
+                result[rotate_ccw(s, orient)].append(c)
+        return result
 
 
-    # FIXME: this is crappy code
-    @staticmethod
-    def rotated(card, orient):
-        sides = 'wsen'
-        map_sides = dict(zip(sides, rotate(sides, orient)))
-        result_resources = list()
-        for cr in card.resources:
-            # FIXME: this becomes annoying!
-            if cr.code() == 'M':
-                continue
+g_dirs_ccw = dict(zip('wsen', 'senw'))
 
-            f = None
-            if cr.code() == 'r':
-                new_sides = []
-                for s in cr.sides:
-                    new_sides.append(map_sides.get(s))
-                result_resources.append(RoadFragment(new_sides))
-            if cr.code() == 'c':
-                new_sides = []
-                for s in cr.sides:
-                    new_sides.append(map_sides.get(s))
-                result_resources.append(CastleFragment(new_sides, shield=cr.shield))
-            if cr.code() == 'm':
-                new_sides = []
-                for s in cr.sides:
-                    new_sides.append(map_sides.get(s))
-                result_resources.append(MeadowFragment(new_sides))
-        return Card(result_resources)
-
-
-def rotate(l,n):
-    return l[n:] + l[:n]
+# counterclockwise
+def rotate_ccw(direction, n):
+    for i in range(n):
+        direction = g_dirs_ccw[direction]
+    return direction
 
 
 class Graph:
@@ -336,32 +297,31 @@ class Graph:
         self.objects[obj.id_] = obj
 
         for s in obj.sides[:]:
-            self.maybe_merge(*s)
+            self.maybe_merge(s)
 
 
-    def find_root_id(self, xy, s):
-        x1y1s1 = xy,s
+    def find_root_id(self, id_):
         while True:
-            x1y1s1 = self.ids.get((xy,s))
-            if not x1y1s1:
+            parent_id = self.ids.get(id_)
+            if not parent_id:
                 return None
-            if x1y1s1 == (xy,s):
-                return x1y1s1
-            xy,s = x1y1s1
+            if parent_id == id_:
+                return parent_id
+            id_ = parent_id
 
 
-    def find(self, xy, s):
-        root_id = self.find_root_id(xy, s)
+    def get(self, id_):
+        root_id = self.find_root_id(id_)
         r = self.objects.get(root_id)
         return r
 
 
-    def maybe_merge(self, xy, side):
-        # FIXME: not very optimal: should we pass r0 as a param here?
-        obj0 = self.find(xy,side)
+    def maybe_merge(self, id_):
+        xy,side = id_
+        obj0 = self.get(id_)
         if not obj0:
             raise ValueError('No object at ' + str(xy) + ' ' + side)
-        obj1 = self.find(*adjacent(xy,side))
+        obj1 = self.get(adjacent(xy,side))
         if not obj1:
             return
 
@@ -413,9 +373,8 @@ def adjacent((x,y), side):
 
 class Board:
     def __init__(self):
-        # (x,y) -> Card
-        # FIXME: don't need it anymore
-        self.cards = dict()
+        # (x,y) -> (dir -> card side)
+        self.cell_borders = dict()
 
         # (x,y) -> Monastery
         self.monasteries = dict()
@@ -426,30 +385,34 @@ class Board:
 
         self.last = None
 
-    def add_card(self, card, xy):
-        # xy already ocupied
-        if self.cards.get(xy):
+
+    def can_put_card(self, card, xy, orient):
+        if self.cell_borders.get(xy):
             return False
 
-        x,y = xy
         sides = 'enws'
+        card_borders = card.get_borders(orient)
 
         has_neighbor = False
         for s in sides:
-            (x1,y1),s1 = adjacent(xy,s)
-            neighbor = self.cards.get((x1,y1))
-            if neighbor:
+            x1y1,s1 = adjacent(xy,s)
+            neighbor_borders = self.cell_borders.get(x1y1)
+            if neighbor_borders:
                 has_neighbor = True
-                side = card.sides[s]
-                adj_side = self.find_resources((x1,y1),s1)
-
-                if not self.do_sides_match(side, adj_side):
+                if not self.do_sides_match(card_borders[s], neighbor_borders[s1]):
                     return False
 
-        if not has_neighbor and self.cards:
+        if not has_neighbor and self.cell_borders:
             return False
 
-        self.cards[xy] = card
+        return True
+
+
+    def add_card(self, card, xy, orient=0):
+        if not self.can_put_card(card, xy, orient):
+            return False
+
+        self.cell_borders[xy] = card.get_borders(orient)
         self.last = xy
 
         # handle adjacent monasteries
@@ -462,39 +425,26 @@ class Board:
             if r.code() == 'M':
                 self.monasteries[xy] = Monastery(xy)
             elif r.code() == 'r':
-                road = Road.from_fragment(r, xy)
+                road = Road.from_fragment(r, xy, orient)
                 self.roads.add(road)
             elif r.code() == 'c':
-                castle = Castle.from_fragment(r, xy)
+                castle = Castle.from_fragment(r, xy, orient)
                 self.castles.add(castle)
             elif r.code() == 'm':
-                meadow = Meadow.from_fragment(r, xy, self.castles)
+                meadow = Meadow.from_fragment(r, xy, orient, self.castles)
                 self.meadows.add(meadow)
 
         return True
 
-    
+
     def find_resource(self, res_id):
         code,id_ = res_id
-        if code == 'M':
-            return self.monasteries.get(id_)
-        else:
-            objs = {'r': self.roads, 'c': self.castles, 'm': self.meadows}
-            return objs[code].find(*id_)
+        objs = {'r': self.roads,
+                'c': self.castles,
+                'm': self.meadows,
+                'M': self.monasteries}
+        return objs[code].get(id_)
 
-
-    def find_resources(self, xy, side):
-        result = []
-        r = self.roads.find(xy,side)
-        if r:
-            result.append(r.code())
-        c = self.castles.find(xy,side)
-        if c:
-            result.append(c.code())
-        m = self.meadows.find(xy,side)
-        if m:
-            result.append(m.code())
-        return result
 
     def neighbors(self, (x, y)):
         return [(x-1,y-1), (x,y-1), (x+1,y-1), (x-1,y), (x+1,y), (x-1,y+1), (x,y+1), (x+1,y+1)]
@@ -516,8 +466,7 @@ class Board:
         return True
 
     def do_sides_match(self, side1, side2):
-        # FIXME: at least at the moment
-        return sorted(side1) == sorted(side2)
+        return side1 == side2[::-1]
 
     def find_monastery(self, xy):
         return self.monasteries.get(xy)
@@ -564,47 +513,47 @@ class CarcassoneTest(unittest.TestCase):
         self.assertFalse(status)
 
         card2 = Card([RoadFragment(['n', 's'])])
-        status = board.add_card(Card.rotated(card2,1), (1,0))
+        status = board.add_card(card2, (1,0), 1)
         # card2 doesn't combine with card0 with this orientation
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.add_card(Card.rotated(card2,2), (1,0))
+        status = board.add_card(card2, (1,0), 2)
         self.assertTrue(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.find((1,0), 'e'), p0)
+        status = board.put_token(board.roads.get(((1,0), 'e')), p0)
         # there is no road at given coords
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.find((0,0), 'n'), p0)
+        status = board.put_token(board.roads.get(((0,0), 'n')), p0)
         # (0,0) was not the last turn
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.find((1,0), 'n'), p0)
+        status = board.put_token(board.roads.get(((1,0), 'n')), p0)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 1)
         self.assertEqual(p1.score, 0)
 
         card3 = Card([RoadFragment(['e', 'w'])])
-        status = board.add_card(Card.rotated(card3,1), (2,0))
+        status = board.add_card(card3, (2,0), 1)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 1)
         self.assertEqual(p1.score, 0)
 
         card4 = Card([RoadFragment(['w'])])
-        status = board.add_card(Card.rotated(card4, 3), (0,-1))
+        status = board.add_card(card4, (0,-1), 3)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.find((0,-1), 'n'), p0)
+        status = board.put_token(board.roads.get(((0,-1), 'n')), p0)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
@@ -613,8 +562,8 @@ class CarcassoneTest(unittest.TestCase):
         status = board.add_card(card, (0,1))
         self.assertTrue(status)
 
-        road1 = board.roads.find((0,-1), 'n')
-        road2 = board.roads.find((0,0), 's')
+        road1 = board.roads.get(((0,-1), 'n'))
+        road2 = board.roads.get(((0,0), 's'))
         self.assertTrue(road1)
         self.assertEqual(road1, road2)
         self.assertEqual(road1.score(), 3)
@@ -625,18 +574,18 @@ class CarcassoneTest(unittest.TestCase):
 
         card = Card([RoadFragment(['s'])])
         board.add_card(card, (-1,1))
-        status = board.put_token(board.roads.find((-1,1), 's'), p0)
+        status = board.put_token(board.roads.get(((-1,1), 's')), p0)
         self.assertTrue(status)
         card = Card([RoadFragment(['n'])])
         board.add_card(card, (-1,-1))
-        status = board.put_token(board.roads.find((-1,-1), 'n'), p1)
+        status = board.put_token(board.roads.get(((-1,-1), 'n')), p1)
         self.assertTrue(status)
         # NB: merges to 2 other roads
         card = Card([RoadFragment(['n', 's'])])
         board.add_card(card, (-1,0))
 
         game.on_turn_end()
-        road = board.roads.find((-1,0), 's')
+        road = board.roads.get(((-1,0), 's'))
         self.assertEqual(road.score(), 3)
         self.assertEqual(p0.score, 6)
         self.assertEqual(p1.score, 3)
@@ -667,19 +616,19 @@ class CarcassoneTest(unittest.TestCase):
         status = board.add_card(card, (0,0))
         self.assertTrue(status)
 
-        meadow1 = board.meadows.find((0,0), 'n')
+        meadow1 = board.meadows.get(((0,0), 'n'))
         status = board.put_token(meadow1, p1)
         self.assertTrue(status)
 
         card = Card([CastleFragment(['n', 'w'], shield=True)])
-        status = board.add_card(Card.rotated(card, 3), (-1,0))
+        status = board.add_card(card, (-1,0), 3)
         self.assertTrue(status)
 
-        status = board.put_token(board.castles.find((-1,0), 'e'), p0)
+        status = board.put_token(board.castles.get(((-1,0), 'e')), p0)
         self.assertTrue(status)
 
-        castle1 = board.castles.find((0,0), 'w')
-        castle2 = board.castles.find((-1,0), 'e')
+        castle1 = board.castles.get(((0,0), 'w'))
+        castle2 = board.castles.get(((-1,0), 'e'))
         self.assertTrue(castle1)
         self.assertEqual(castle1, castle2)
         self.assertFalse(castle1.is_closed())
@@ -690,7 +639,7 @@ class CarcassoneTest(unittest.TestCase):
         self.assertTrue(status)
         self.assertTrue(castle1.is_closed())
 
-        meadow2 = board.meadows.find((-1,1), 'w')
+        meadow2 = board.meadows.get(((-1,1), 'w'))
         self.assertTrue(meadow2)
         self.assertTrue(meadow1)
         self.assertNotEqual(meadow1, meadow2)
@@ -709,8 +658,8 @@ class CarcassoneTest(unittest.TestCase):
         status = board.add_card(card, (0,1))
         self.assertTrue(status)
 
-        meadow1 = board.meadows.find((0,0), 'n')
-        meadow2 = board.meadows.find((-1,1), 'w')
+        meadow1 = board.meadows.get(((0,0), 'n'))
+        meadow2 = board.meadows.get(((-1,1), 'w'))
         self.assertTrue(meadow2)
         self.assertTrue(meadow1)
         self.assertEqual(meadow1, meadow2)
@@ -720,7 +669,7 @@ class CarcassoneTest(unittest.TestCase):
         status = board.add_card(card, (1,0))
         self.assertTrue(status)
 
-        status = board.put_token(board.meadows.find((1,0), 'n'), p1)
+        status = board.put_token(board.meadows.get(((1,0), 'n')), p1)
         # player 1 is out of tokens
         self.assertFalse(status)
         self.assertEqual(p0.token_count, 2)
