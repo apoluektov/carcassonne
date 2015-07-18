@@ -137,7 +137,7 @@ class Road:
 
     @classmethod
     def from_fragment(cls, fragment, xy, orient):
-        sides = [(xy, rotate_ccw(s, orient)) for s in fragment.sides]
+        sides = translate_fragment_sides(fragment.sides, xy, orient)
         id_ = sides[0]
         return cls(id_=id_, xy=xy, sides=sides)
 
@@ -171,7 +171,7 @@ class Castle:
 
     @classmethod
     def from_fragment(cls, fragment, xy, orient):
-        sides = [(xy, rotate_ccw(s, orient)) for s in fragment.sides]
+        sides = translate_fragment_sides(fragment.sides, xy, orient)
         id_ = sides[0]
         return cls(id_=id_, xy=xy, sides=sides, shield=fragment.shield)
 
@@ -204,30 +204,46 @@ class Meadow:
 
         self.castle_graph = castle_graph
         self.castle_ids = set()
+
         for s in self.adjacent_sides():
-            c = self.castle_graph.find_root_id((xy, s))
+            c = self.castle_graph.find_id_by_coord((xy, s))
             if c:
                 self.castle_ids.add(c)
 
     @classmethod
     def from_fragment(cls, fragment, xy, orient, castle_graph):
-        sides = [(xy, rotate_ccw(s, orient)) for s in fragment.sides]
+        sides = translate_fragment_sides(fragment.sides, xy, orient)
         id_ = sides[0]
         return cls(id_=id_, xy=xy, sides=sides, castle_graph=castle_graph)
 
     def adjacent_sides(self):
         # FIXME: exclude the sides that belong to this meadow itself
-        # FIXME: handle meadows split into
         result = set()
-        for s in self.sides:
+        for xy,(dir_,coords) in self.sides:
             # FIXME: shit ugly!
-            if s[1] == 'w' or s[1] == 'e':
-                result.add('n')
-                result.add('s')
-            if s[1] == 'n' or s[1] == 's':
-                result.add('e')
-                result.add('w')
+            if dir_ == 'w':
+                if 1 in coords:
+                    result.add(('n',0))
+                if 0 in coords:
+                    result.add(('s',1))
+            elif dir_ == 'e':
+                if 1 in coords:
+                    result.add(('s',0))
+                if 0 in coords:
+                    result.add(('n',1))
+            elif dir_ == 'n':
+                if 1 in coords:
+                    result.add(('e',0))
+                if 0 in coords:
+                    result.add(('w',1))
+            elif dir_ == 's':
+                if 1 in coords:
+                    result.add(('w',0))
+                if 0 in coords:
+                    result.add(('e',1))
+
         return list(result)
+
 
     def code(self):
         return 'm'
@@ -251,13 +267,14 @@ class Meadow:
     def merge_into(self, dest):
         dest.cells = dest.cells.union(self.cells)
         dest.tokens += self.tokens
-        new_castles = set()
-        for c in self.castle_ids:
-            new_castles.add(self.castle_graph.find_root_id(c))
-        for c in dest.castle_ids:
-            new_castles.add(self.castle_graph.find_root_id(c))
+        new_castle_ids = set()
 
-        dest.castles = new_castles
+        for c in self.castle_ids:
+            new_castle_ids.add(self.castle_graph.find_root_id(c))
+        for c in dest.castle_ids:
+            new_castle_ids.add(self.castle_graph.find_root_id(c))
+
+        dest.castle_ids = new_castle_ids
 
 
 class Card:
@@ -266,11 +283,13 @@ class Card:
         self.resources = resources
 
     def get_borders(self, orient):
-        result = defaultdict(list)
+        result = defaultdict(dict)
         for r in self.resources:
             c = r.code()
-            for s in r.sides:
-                result[rotate_ccw(s, orient)].append(c)
+            for dir_,coords in r.sides:
+                dir_ = rotate_ccw(dir_, orient)
+                result[dir_][coords] = c
+
         return result
 
 
@@ -283,16 +302,24 @@ def rotate_ccw(direction, n):
     return direction
 
 
+def translate_fragment_sides(sides, xy, orient):
+    return [(xy, (rotate_ccw(dir_, orient), coords)) for dir_,coords in sides]
+
+
 class Graph:
     def __init__(self):
         # ((x,y),s) -> id
         self.ids = dict()
+        self.ids_by_coords = dict()
         # id -> obj
         self.objects = dict()
 
     def add(self, obj):
         for s in obj.sides:
             self.ids[s] = obj.id_
+            xy,(dir_,coords) = s
+            for c in coords:
+                self.ids_by_coords[(xy,(dir_,c))] = obj.id_
 
         self.objects[obj.id_] = obj
 
@@ -314,6 +341,9 @@ class Graph:
         root_id = self.find_root_id(id_)
         r = self.objects.get(root_id)
         return r
+
+    def find_id_by_coord(self, (xy, (dir_, c))):
+        return self.ids_by_coords.get((xy,(dir_,c)))
 
 
     def maybe_merge(self, id_):
@@ -359,6 +389,10 @@ class Graph:
         del self.objects[obj.id_]
 
 
+def adjacent_coords(coords):
+    return tuple(sorted(1-c for c in coords)) if coords else None
+    
+
 def adjacent((x,y), side):
     # FIXME: const static data; move so that it is only initialized once
     sides = 'enws'
@@ -366,9 +400,12 @@ def adjacent((x,y), side):
     deltas = [(1,0), (0,1), (-1,0), (0,-1)]
     d = dict(zip(sides, range(0,4)))
 
-    idx = d[side]
+    dir_,coords = side
+    adj_coords = tuple(sorted(1-c for c in coords)) if coords else None
+
+    idx = d[dir_]
     dx,dy = deltas[idx]
-    return ((x+dx,y+dy), adj_sides[idx])
+    return ((x+dx,y+dy), (adj_sides[idx], adj_coords))
 
 
 class Board:
@@ -395,7 +432,7 @@ class Board:
 
         has_neighbor = False
         for s in sides:
-            x1y1,s1 = adjacent(xy,s)
+            x1y1,(s1,dummy) = adjacent(xy,(s, None))
             neighbor_borders = self.cell_borders.get(x1y1)
             if neighbor_borders:
                 has_neighbor = True
@@ -466,10 +503,35 @@ class Board:
         return True
 
     def do_sides_match(self, side1, side2):
-        return side1 == side2[::-1]
+        if len(side1) != len(side2):
+            return False
+        for coords1,code1 in side1.items():
+            if side2[adjacent_coords(coords1)] != code1:
+                return False
+        return True
 
     def find_monastery(self, xy):
         return self.monasteries.get(xy)
+
+
+east_side = ('e', (0,1))
+north_side = ('n', (0,1))
+west_side = ('w', (0,1))
+south_side = ('s', (0,1))
+
+east_center = ('e', (0.5,))
+north_center = ('n', (0.5,))
+west_center = ('w', (0.5,))
+south_center = ('s', (0.5,))
+
+west_south_half = ('w', (0,0.5))
+west_north_half = ('w', (0.5,1))
+north_west_half = ('n', (0,0.5))
+north_east_half = ('n', (0.5,1))
+east_north_half = ('e', (0,0.5))
+east_south_half = ('e', (0.5,1))
+south_east_half = ('s', (0,0.5))
+south_west_half = ('s', (0.5,1))
 
 
 class CarcassoneTest(unittest.TestCase):
@@ -485,7 +547,7 @@ class CarcassoneTest(unittest.TestCase):
         # put a card and don't claim any resource
         # the card should be put
         # the score should not change
-        card0 = Card([RoadFragment(['s', 'n']), MonasteryFragment()])
+        card0 = Card([RoadFragment([south_center, north_center]), MonasteryFragment()])
         status = board.add_card(card0, (0,0))
         self.assertTrue(status)
         self.assertEqual(p0.score, 0)
@@ -501,18 +563,18 @@ class CarcassoneTest(unittest.TestCase):
         # put another card to the same position
         # the card should not be put there
         # the score should not change
-        card1 = Card([RoadFragment(['n', 's'])])
+        card1 = Card([RoadFragment([north_center, south_center])])
         status = board.add_card(card1, (0,0))
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
         # put a card so that it is not adjacent to any card
-        card = Card([RoadFragment(['n', 's'])])
+        card = Card([RoadFragment([north_center, south_center])])
         status = board.add_card(card, (2,0))
         self.assertFalse(status)
 
-        card2 = Card([RoadFragment(['n', 's'])])
+        card2 = Card([RoadFragment([north_center, south_center])])
         status = board.add_card(card2, (1,0), 1)
         # card2 doesn't combine with card0 with this orientation
         self.assertFalse(status)
@@ -524,46 +586,46 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.get(((1,0), 'e')), p0)
+        status = board.put_token(board.roads.get(((1,0), east_center)), p0)
         # there is no road at given coords
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.get(((0,0), 'n')), p0)
+        status = board.put_token(board.roads.get(((0,0), north_center)), p0)
         # (0,0) was not the last turn
         self.assertFalse(status)
         self.assertEqual(p0.score, 0)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.get(((1,0), 'n')), p0)
+        status = board.put_token(board.roads.get(((1,0), north_center)), p0)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 1)
         self.assertEqual(p1.score, 0)
 
-        card3 = Card([RoadFragment(['e', 'w'])])
+        card3 = Card([RoadFragment([east_center, west_center])])
         status = board.add_card(card3, (2,0), 1)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 1)
         self.assertEqual(p1.score, 0)
 
-        card4 = Card([RoadFragment(['w'])])
+        card4 = Card([RoadFragment([west_center])])
         status = board.add_card(card4, (0,-1), 3)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
 
-        status = board.put_token(board.roads.get(((0,-1), 'n')), p0)
+        status = board.put_token(board.roads.get(((0,-1), north_center)), p0)
         self.assertTrue(status)
 #        self.assertEqual(p0.score, 2)
         self.assertEqual(p1.score, 0)
 
-        card = Card([RoadFragment(['s'])])
+        card = Card([RoadFragment([south_center])])
         status = board.add_card(card, (0,1))
         self.assertTrue(status)
 
-        road1 = board.roads.get(((0,-1), 'n'))
-        road2 = board.roads.get(((0,0), 's'))
+        road1 = board.roads.get(((0,-1), north_center))
+        road2 = board.roads.get(((0,0), south_center))
         self.assertTrue(road1)
         self.assertEqual(road1, road2)
         self.assertEqual(road1.score(), 3)
@@ -572,29 +634,29 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(p0.score, 3)
         self.assertEqual(p1.score, 0)
 
-        card = Card([RoadFragment(['s'])])
+        card = Card([RoadFragment([south_center])])
         board.add_card(card, (-1,1))
-        status = board.put_token(board.roads.get(((-1,1), 's')), p0)
+        status = board.put_token(board.roads.get(((-1,1), south_center)), p0)
         self.assertTrue(status)
-        card = Card([RoadFragment(['n'])])
+        card = Card([RoadFragment([north_center])])
         board.add_card(card, (-1,-1))
-        status = board.put_token(board.roads.get(((-1,-1), 'n')), p1)
+        status = board.put_token(board.roads.get(((-1,-1), north_center)), p1)
         self.assertTrue(status)
         # NB: merges to 2 other roads
-        card = Card([RoadFragment(['n', 's'])])
+        card = Card([RoadFragment([north_center, south_center])])
         board.add_card(card, (-1,0))
 
         game.on_turn_end()
-        road = board.roads.get(((-1,0), 's'))
+        road = board.roads.get(((-1,0), south_center))
         self.assertEqual(road.score(), 3)
         self.assertEqual(p0.score, 6)
         self.assertEqual(p1.score, 3)
 
         self.assertEqual(monastery.score(), 7)
 
-        card = Card([RoadFragment(['n', 's'])])
+        card = Card([RoadFragment([north_center, south_center])])
         board.add_card(card, (1,1))
-        card = Card([RoadFragment(['n', 's'])])
+        card = Card([RoadFragment([north_center, south_center])])
         board.add_card(card, (1,-1))
 
         game.on_turn_end()
@@ -612,34 +674,34 @@ class CarcassoneTest(unittest.TestCase):
         board = Board()
         game = Game([p0, p1], board)
 
-        card = Card([CastleFragment(['e']), CastleFragment(['w']), MeadowFragment(['n', 's'])])
+        card = Card([CastleFragment([east_side]), CastleFragment([west_side]), MeadowFragment([north_side, south_side])])
         status = board.add_card(card, (0,0))
         self.assertTrue(status)
 
-        meadow1 = board.meadows.get(((0,0), 'n'))
+        meadow1 = board.meadows.get(((0,0), north_side))
         status = board.put_token(meadow1, p1)
         self.assertTrue(status)
 
-        card = Card([CastleFragment(['n', 'w'], shield=True)])
+        card = Card([CastleFragment([north_side, west_side], shield=True)])
         status = board.add_card(card, (-1,0), 3)
         self.assertTrue(status)
 
-        status = board.put_token(board.castles.get(((-1,0), 'e')), p0)
+        status = board.put_token(board.castles.get(((-1,0), east_side)), p0)
         self.assertTrue(status)
 
-        castle1 = board.castles.get(((0,0), 'w'))
-        castle2 = board.castles.get(((-1,0), 'e'))
+        castle1 = board.castles.get(((0,0), west_side))
+        castle2 = board.castles.get(((-1,0), east_side))
         self.assertTrue(castle1)
         self.assertEqual(castle1, castle2)
         self.assertFalse(castle1.is_closed())
         self.assertEqual(castle1.score(), 3)
 
-        card = Card([CastleFragment(['s']), MeadowFragment(['n', 'e', 'w'])])
+        card = Card([CastleFragment([south_side]), MeadowFragment([north_side, east_side, west_side])])
         status = board.add_card(card, (-1,1))
         self.assertTrue(status)
         self.assertTrue(castle1.is_closed())
 
-        meadow2 = board.meadows.get(((-1,1), 'w'))
+        meadow2 = board.meadows.get(((-1,1), west_side))
         self.assertTrue(meadow2)
         self.assertTrue(meadow1)
         self.assertNotEqual(meadow1, meadow2)
@@ -654,22 +716,22 @@ class CarcassoneTest(unittest.TestCase):
         self.assertEqual(p0.score, 8)
         self.assertEqual(p1.score, 0)
 
-        card = Card([MeadowFragment(['w', 's', 'n', 'e'])])
+        card = Card([MeadowFragment([west_side, south_side, north_side, east_side])])
         status = board.add_card(card, (0,1))
         self.assertTrue(status)
 
-        meadow1 = board.meadows.get(((0,0), 'n'))
-        meadow2 = board.meadows.get(((-1,1), 'w'))
+        meadow1 = board.meadows.get(((0,0), north_side))
+        meadow2 = board.meadows.get(((-1,1), west_side))
         self.assertTrue(meadow2)
         self.assertTrue(meadow1)
         self.assertEqual(meadow1, meadow2)
         self.assertEqual(meadow1.score(), 3)
 
-        card = Card([CastleFragment(['w', 's']), MeadowFragment(['n', 'e'])])
+        card = Card([CastleFragment([west_side, south_side]), MeadowFragment([north_side, east_side])])
         status = board.add_card(card, (1,0))
         self.assertTrue(status)
 
-        status = board.put_token(board.meadows.get(((1,0), 'n')), p1)
+        status = board.put_token(board.meadows.get(((1,0), north_side)), p1)
         # player 1 is out of tokens
         self.assertFalse(status)
         self.assertEqual(p0.token_count, 2)
@@ -677,6 +739,61 @@ class CarcassoneTest(unittest.TestCase):
         game.on_game_end()
         self.assertEqual(p0.score, 8)
         self.assertEqual(p1.score, 3)
+
+
+    # some meadows are split by roads; test that too
+    def test3(self):
+        board = Board()
+        p0 = Player(token_count=3)
+        p1 = Player(token_count=3)
+
+        game = Game([p0, p1], board)
+
+        card = Card([CastleFragment([west_side]),
+                     MeadowFragment([north_east_half, east_side, south_east_half]),
+                     MeadowFragment([south_west_half, north_west_half]),
+                     RoadFragment([north_center, south_center])])
+
+        status = board.add_card(card, (0,0), 0)
+        self.assertTrue(status)
+        meadow1_1 = board.meadows.get(((0,0), north_east_half))
+        meadow1_2 = board.meadows.get(((0,0), east_side))
+        meadow2 = board.meadows.get(((0,0), north_west_half))
+        meadowNone = board.meadows.get(((0,0), north_side))
+        self.assertTrue(meadow1_1)
+        self.assertEqual(meadow1_1, meadow1_2)
+        self.assertTrue(meadow2)
+        self.assertNotEqual(meadow1_1, meadow2)
+        self.assertFalse(meadowNone)
+
+        status = board.put_token(meadow2, p0)
+        self.assertTrue(status)
+
+        card = Card([MeadowFragment([south_side, west_side, north_east_half,
+                                     north_west_half, east_side]),
+                     RoadFragment([north_center])])
+
+        status = board.add_card(card, (0,1), 0)
+        self.assertFalse(status)
+
+        status = board.add_card(card, (0,1), 2)
+        self.assertTrue(status)
+
+        # now should get merged
+        meadow1_1 = board.meadows.get(((0,0), north_east_half))
+        meadow2 = board.meadows.get(((0,0), north_west_half))
+        self.assertTrue(meadow1_1)
+        self.assertEqual(meadow1_1, meadow2)
+
+        card = Card([CastleFragment([east_side]),
+                     MeadowFragment([west_side, north_side, south_side])])
+        status = board.add_card(card, (-1,0), 0)
+        self.assertTrue(status)
+
+        self.assertTrue(board.castles.get(((0,0), west_side)).score(), 4)
+
+        meadow = board.meadows.get(((0,0), north_west_half))
+        self.assertEqual(meadow.score(), 3)
 
 if __name__ == '__main__':
     unittest.main()
