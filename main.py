@@ -473,6 +473,17 @@ class Board:
 
         return True
 
+    def drop_card(self, card):
+        if not self.cell_borders:
+            return False
+        # check neighbors of all cards on the board
+        for x,y in self.cell_borders.keys():
+            for x1y1 in [(x+1,y), (x-1,y), (x, y+1), (x, y-1)]:
+                for orient in range(4):
+                    if self.can_put_card(card, x1y1, orient):
+                        return False
+        return True
+
 
     def find_resource(self, res_id):
         code,id_ = res_id
@@ -794,6 +805,42 @@ class CarcassoneTest(unittest.TestCase):
 
         meadow = board.meadows.get(((0,0), north_west_half))
         self.assertEqual(meadow.score(), 3)
+
+
+    # what to do if the card cannot be added?
+    def test4(self):
+        board = Board()
+        p0 = Player(token_count=3)
+        p1 = Player(token_count=3)
+
+        game = Game([p0, p1], board)
+
+        card = Card([MeadowFragment([west_side, north_side, east_side, south_side])])
+        status = board.add_card(card, (0,0), 0)
+        self.assertTrue(status)
+        status = board.add_card(card, (0,1), 0)
+        self.assertTrue(status)
+        status = board.add_card(card, (1,0), 0)
+        self.assertTrue(status)
+
+        card1 = Card([
+            RoadFragment([west_side]),
+            RoadFragment([north_side]),
+            RoadFragment([east_side]),
+            RoadFragment([south_side])
+        ])
+        status = board.drop_card(card1)
+        self.assertTrue(status)
+
+        card2 = Card([
+            MeadowFragment([west_side]),
+            RoadFragment([north_side]),
+            RoadFragment([east_side]),
+            RoadFragment([south_side])
+        ])
+        status = board.drop_card(card2)
+        self.assertFalse(status)
+
 
 if __name__ == '__main__':
     unittest.main()
