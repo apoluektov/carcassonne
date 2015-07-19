@@ -458,7 +458,10 @@ class Board:
             if m:
                 m.adjacent.append(xy)
 
-        for r in card.resources:
+        resources = card.resources[:]
+        # needed so that castles are handled before meadows
+        resources.sort(key=lambda r: r.code())
+        for r in resources:
             if r.code() == 'M':
                 self.monasteries[xy] = Monastery(xy)
             elif r.code() == 'r':
@@ -840,6 +843,26 @@ class CarcassoneTest(unittest.TestCase):
         ])
         status = board.drop_card(card2)
         self.assertFalse(status)
+
+
+    # test that castles are added to the graph before meadows
+    # as meadows lookup and add references to castles
+    def test5(self):
+        board = Board()
+        p0 = Player(token_count=3)
+        p1 = Player(token_count=3)
+
+        game = Game([p0, p1], board)
+
+        card = Card([
+            MeadowFragment([north_side, west_side]),
+            CastleFragment([south_side, east_side])
+        ])
+
+        board.add_card(card, (0,0), 0)
+        meadow = board.meadows.get(((0,0), west_side))
+        self.assertTrue(meadow)
+        self.assertTrue(meadow.castle_ids)
 
 
 if __name__ == '__main__':
