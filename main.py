@@ -548,6 +548,193 @@ south_east_half = ('s', (0,0.5))
 south_west_half = ('s', (0.5,1))
 
 
+
+def gen_standard_deck():
+    cards = dict()
+    freqs = dict()
+
+    cards['A'] = Card([
+        MeadowFragment([north_side, east_side, south_east_half, south_west_half, west_side]),
+        MonasteryFragment(),
+        RoadFragment([south_center]),
+    ])
+    freqs['A'] = 2
+
+    cards['B'] = Card([
+        MeadowFragment([north_side, east_side, south_side, west_side]),
+        MonasteryFragment(),
+    ])
+    freqs['B'] = 4
+
+    cards['C'] = Card([
+        CastleFragment([north_side, east_side, south_side, west_side], shield=True),
+    ])
+    freqs['C'] = 1
+
+    cards['D'] = Card([
+        CastleFragment([north_side]),
+        MeadowFragment([east_north_half, west_north_half]),
+        MeadowFragment([east_south_half, south_side, west_south_half]),
+        RoadFragment([east_center, west_center]),
+    ])
+    freqs['D'] = 4
+
+    cards['E'] = Card([
+        CastleFragment([north_side]),
+        MeadowFragment([east_side, south_side, west_side]),
+    ])
+    freqs['E'] = 5
+
+    cards['F'] = Card([
+        CastleFragment([east_side, west_side], shield=True),
+        MeadowFragment([north_side]),
+        MeadowFragment([south_side]),
+    ])
+    freqs['F'] = 2
+
+    cards['G'] = Card([
+        CastleFragment([east_side, west_side]),
+        MeadowFragment([north_side]),
+        MeadowFragment([south_side]),
+    ])
+    freqs['G'] = 1
+
+    cards['H'] = Card([
+        CastleFragment([north_side]),
+        CastleFragment([south_side]),
+        MeadowFragment([east_side, west_side]),
+    ])
+    freqs['H'] = 3
+
+    cards['I'] = Card([
+        CastleFragment([north_side]),
+        CastleFragment([east_side]),
+        MeadowFragment([south_side, west_side]),
+    ])
+    freqs['I'] = 2
+
+    cards['J'] = Card([
+        CastleFragment([north_side]),
+        MeadowFragment([east_north_half, south_west_half, west_side]),
+        MeadowFragment([east_south_half, south_east_half]),
+        RoadFragment([east_center, south_center]),
+    ])
+    freqs['J'] = 3
+
+    cards['K'] = Card([
+        CastleFragment([north_side]),
+        MeadowFragment([east_side, south_east_half, west_north_half]),
+        MeadowFragment([south_west_half, west_south_half]),
+        RoadFragment([south_center, west_center]),
+    ])
+    freqs['K'] = 3
+
+    cards['L'] = Card([
+        CastleFragment([north_side]),
+        MeadowFragment([east_north_half, west_north_half]),
+        MeadowFragment([east_south_half, south_east_half]),
+        MeadowFragment([south_west_half, west_south_half]),
+        RoadFragment([east_center]),
+        RoadFragment([south_center]),
+        RoadFragment([west_center]),
+    ])
+    freqs['L'] = 3
+
+    cards['M'] = Card([
+        CastleFragment([north_side, west_side], shield=True),
+        MeadowFragment([east_side, south_side]),
+    ])
+    freqs['M'] = 2
+
+    cards['N'] = Card([
+        CastleFragment([north_side, west_side]),
+        MeadowFragment([east_side, south_side]),
+    ])
+    freqs['N'] = 3
+
+    cards['O'] = Card([
+        CastleFragment([north_side, west_side], shield=True),
+        MeadowFragment([east_north_half, south_west_half]),
+        MeadowFragment([east_south_half, south_east_half]),
+        RoadFragment([east_center, south_center]),
+    ])
+    freqs['O'] = 2
+
+    cards['P'] = Card([
+        CastleFragment([north_side, west_side]),
+        MeadowFragment([east_north_half, south_west_half]),
+        MeadowFragment([east_south_half, south_east_half]),
+        RoadFragment([east_center, south_center]),
+    ])
+    freqs['P'] = 3
+
+    cards['Q'] = Card([
+        CastleFragment([north_side, east_side, west_side], shield=True),
+        MeadowFragment([south_side]),
+    ])
+    freqs['Q'] = 1
+
+    cards['R'] = Card([
+        CastleFragment([north_side, east_side, west_side]),
+        MeadowFragment([south_side]),
+    ])
+    freqs['R'] = 3
+
+    cards['S'] = Card([
+        CastleFragment([north_side, east_side, west_side], shield=True),
+        MeadowFragment([south_east_half]),
+        MeadowFragment([south_west_half]),
+        RoadFragment([south_center]),
+    ])
+    freqs['S'] = 2
+
+    cards['T'] = Card([
+        CastleFragment([north_side, east_side, west_side]),
+        MeadowFragment([south_east_half]),
+        MeadowFragment([south_west_half]),
+        RoadFragment([south_center]),
+    ])
+    freqs['T'] = 1
+
+    cards['U'] = Card([
+        MeadowFragment([north_east_half, east_side, south_east_half]),
+        MeadowFragment([south_west_half, west_side, north_west_half]),
+        RoadFragment([north_center, south_center]),
+    ])
+    freqs['U'] = 8
+
+    cards['V'] = Card([
+        MeadowFragment([north_side, east_side, south_east_half, west_north_half]),
+        MeadowFragment([south_west_half, west_south_half]),
+        RoadFragment([south_center, west_center]),
+    ])
+    freqs['V'] = 9
+
+    cards['W'] = Card([
+        MeadowFragment([north_side, east_north_half, west_north_half]),
+        MeadowFragment([east_south_half, south_east_half]),
+        MeadowFragment([south_west_half, west_south_half]),
+        RoadFragment([east_center]),
+        RoadFragment([south_center]),
+        RoadFragment([west_center]),
+    ])
+    freqs['W'] = 4
+
+    cards['X'] = Card([
+        MeadowFragment([north_east_half, east_north_half]),
+        MeadowFragment([east_south_half, south_east_half]),
+        MeadowFragment([south_west_half, west_south_half]),
+        MeadowFragment([west_north_half, north_west_half]),
+        RoadFragment([north_center]),
+        RoadFragment([east_center]),
+        RoadFragment([south_center]),
+        RoadFragment([west_center]),
+    ])
+    freqs['X'] = 1
+
+    return cards,freqs
+
+
 class CarcassoneTest(unittest.TestCase):
 
     # test roads and monasteries
@@ -863,6 +1050,87 @@ class CarcassoneTest(unittest.TestCase):
         meadow = board.meadows.get(((0,0), west_side))
         self.assertTrue(meadow)
         self.assertTrue(meadow.castle_ids)
+
+    # test standard deck
+    def test6(self):
+        # test that there are no misprint/typo in the standard deck description
+        # by checking some properties that are easy to check
+
+        def shields(fragment):
+            if not isinstance(fragment, CastleFragment):
+                return 0
+            else:
+                return fragment.shield
+
+        def count(fragment, counts):
+            if isinstance(fragment, CastleFragment):
+                counts[0] += 1
+            elif isinstance(fragment, MeadowFragment):
+                counts[1] += 1
+            elif isinstance(fragment, MonasteryFragment):
+                counts[2] += 1
+            elif isinstance(fragment, RoadFragment):
+                counts[3] += 1
+            else:
+                raise ValueError('Really?')
+
+        def valid(fragment):
+            if isinstance(fragment, CastleFragment):
+                for s in fragment.sides:
+                    if s not in [north_side, east_side, south_side, west_side]:
+                        return False
+            elif isinstance(fragment, MeadowFragment):
+                for s in fragment.sides:
+                    if s in [north_center, east_center, south_center, west_center]:
+                        return False
+            elif isinstance(fragment, MonasteryFragment):
+                for s in fragment.sides:
+                    return False
+            elif isinstance(fragment, RoadFragment):
+                for s in fragment.sides:
+                    if s not in [north_center, east_center, south_center, west_center]:
+                        return False
+            else:
+                raise ValueError('Really?')
+            return True
+
+        intervals = {
+            north_side: [0,1,2], east_side: [3,4,5], south_side: [6,7,8], west_side: [9,10,11],
+            north_center: [1], east_center: [4], south_center: [7], west_center: [10],
+            north_west_half: [0], north_east_half: [2],
+            east_north_half: [3], east_south_half: [5],
+            south_east_half: [6], south_west_half: [8],
+            west_south_half: [9], west_north_half: [11],
+        }
+        intervals_once = dict([(i,1) for i in range(12)])
+        def all_covered_once(card):
+            total = defaultdict(int)
+            for f in card.resources:
+                for s in f.sides:
+                    idxs = intervals[s]
+                    for i in idxs:
+                        total[i] += 1
+            self.assertEqual(total, intervals_once)
+
+
+        cards,freqs = gen_standard_deck()
+
+        self.assertEqual(sum(freqs.values()), 72)
+
+        ss = 0
+        counts = [0,0,0,0]
+        for k,c in cards.items():
+            all_covered_once(c)
+            for f in c.resources:
+                ss += shields(f)
+                count(f,counts)
+                self.assertTrue(valid(f))
+
+        self.assertEqual(ss, 6)
+        self.assertEqual(counts[0], 20) # castles
+        self.assertEqual(counts[1], 41) # meadows
+        self.assertEqual(counts[2], 2)  # monasteries
+        self.assertEqual(counts[3], 20) # roads
 
 
 if __name__ == '__main__':
