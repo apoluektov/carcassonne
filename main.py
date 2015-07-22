@@ -422,6 +422,11 @@ class Board:
 
         self.last = None
 
+        # FIXME: seems like it's needed for drawing
+        # FIXME: can we use the object graphs directly?
+        # (x,y) -> (card,orient)
+        self.cards = dict()
+
 
     def can_put_card(self, card, xy, orient):
         if self.cell_borders.get(xy):
@@ -474,7 +479,9 @@ class Board:
                 meadow = Meadow.from_fragment(r, xy, orient, self.castles)
                 self.meadows.add(meadow)
 
+        self.cards[xy] = (card,orient)
         return True
+
 
     def drop_card(self, card):
         if not self.cell_borders:
