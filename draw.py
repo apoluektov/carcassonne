@@ -2,8 +2,8 @@ import pygame
 
 from main import *
 
-
-screen = pygame.display.set_mode((640,480), pygame.RESIZABLE)
+screen_size = (640,480)
+screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
 
 
 def translate(pts, (dx,dy)):
@@ -126,7 +126,7 @@ def draw_board(board):
 
 
 def draw():
-    pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,640,480))
+    pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
 
     draw_card((-1,0), Card([
         CastleFragment([north_side], shield=True),
@@ -173,11 +173,17 @@ def draw():
 
 
 def run():
+    global screen
+    global screen_size
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return
+            elif event.type == pygame.VIDEORESIZE:
+                screen_size = event.w,event.h
+                screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
         draw()
+
 
 
 if __name__ == '__main__':
