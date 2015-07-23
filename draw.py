@@ -175,6 +175,13 @@ def draw():
 def run():
     global screen
     global screen_size
+
+    board = Board()
+    cards,freqs = gen_standard_deck()
+
+    card = cards['A']
+    orient = 0
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -182,7 +189,21 @@ def run():
             elif event.type == pygame.VIDEORESIZE:
                 screen_size = event.w,event.h
                 screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
-        draw()
+            elif event.type == pygame.MOUSEMOTION:
+                pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
+                draw_board(board)
+                dx,dy = event.rel
+                x,y = event.pos
+                draw_card((x/100 - 1, y/100 - 1), card, orient)
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    orient = (orient + 1) % 4
+                    pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
+                    draw_board(board)
+                    draw_card((x/100 - 1, y/100 - 1), card, orient)
+
+        pygame.display.flip()
+
 
 
 
