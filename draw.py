@@ -21,11 +21,12 @@ def rotate(pts, orient, center):
         if orient == 0:
             return cx + x, cy + y
         elif orient == 1:
-            return cx - y, cy + x
+            return cx + y, cy - x
         elif orient == 2:
             return cx - x, cy - y
         elif orient == 3:
-            return cx + y, cy - x
+            return cx - y, cy + x
+
 
     if isinstance(pts,list):
         return[rot(x0-cx,y0-cy,orient) for (x0,y0) in pts]
@@ -36,7 +37,7 @@ def rotate(pts, orient, center):
 
 def draw_card(xy, card, orient):
     x,y = xy
-    dxdy = (100 + 100*x,100 + 100*y)
+    dxdy = (100 + 100*x, 300 - 100*y)
 
     pygame.draw.rect(screen, (0,180,0), pygame.Rect(0,0,100,100).move(*dxdy))
 
@@ -179,8 +180,10 @@ def run():
     board = Board()
     cards,freqs = gen_standard_deck()
 
-    card = cards['A']
+    cards_it = iter(cards.values())
+    card = cards_it.next()
     orient = 0
+    cell_coords = 0,0
 
     while True:
         for event in pygame.event.get():
@@ -194,13 +197,25 @@ def run():
                 draw_board(board)
                 dx,dy = event.rel
                 x,y = event.pos
-                draw_card((x/100 - 1, y/100 - 1), card, orient)
+                cell_coords = x/100 - 1, 2 - (y/100 - 1)
+                draw_card(cell_coords, card, orient)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if board.can_put_card(card, cell_coords, orient):
+                    board.add_card(card, cell_coords, orient)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     orient = (orient + 1) % 4
                     pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
                     draw_board(board)
-                    draw_card((x/100 - 1, y/100 - 1), card, orient)
+                    draw_card(cell_coords, card, orient)
+                if event.key == pygame.K_SPACE:
+                    try:
+                        card = cards_it.next()
+                    except StopIteration:
+                        cards_it = iter(cards.values())
+                        card = cards_it.next()
+                    draw_card(cell_coords, card, orient)
+
 
         pygame.display.flip()
 

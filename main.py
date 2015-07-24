@@ -557,7 +557,9 @@ south_west_half = ('s', (0.5,1))
 
 
 def gen_standard_deck():
-    cards = dict()
+    from collections import OrderedDict
+
+    cards = OrderedDict()
     freqs = dict()
 
     cards['A'] = Card([
