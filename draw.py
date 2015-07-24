@@ -173,54 +173,62 @@ def draw():
     pygame.display.flip()
 
 
-def run():
-    global screen
-    global screen_size
 
-    board = Board()
-    cards,freqs = gen_standard_deck()
+class App:
+    def __init__(self, screen, screen_size):
+        self.screen = screen
+        self.screen_size = screen_size
+        self.board = Board()
+        self.deck = gen_standard_deck()
+        self.orient = 0
 
-    cards_it = iter(cards.values())
-    card = cards_it.next()
-    orient = 0
-    cell_coords = 0,0
+    def redraw(self):
+        pygame.draw.rect(self.screen, (255,255,255), pygame.Rect(0,0,*self.screen_size))
+        draw_board(self.board)
+        draw_card(self.cell_coords, self.card, self.orient)
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return
-            elif event.type == pygame.VIDEORESIZE:
-                screen_size = event.w,event.h
-                screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
-            elif event.type == pygame.MOUSEMOTION:
-                pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
-                draw_board(board)
-                dx,dy = event.rel
-                x,y = event.pos
-                cell_coords = x/100 - 1, 2 - (y/100 - 1)
-                draw_card(cell_coords, card, orient)
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if board.can_put_card(card, cell_coords, orient):
-                    board.add_card(card, cell_coords, orient)
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
-                    orient = (orient + 1) % 4
-                    pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
-                    draw_board(board)
-                    draw_card(cell_coords, card, orient)
-                if event.key == pygame.K_SPACE:
-                    try:
-                        card = cards_it.next()
-                    except StopIteration:
-                        cards_it = iter(cards.values())
-                        card = cards_it.next()
-                    draw_card(cell_coords, card, orient)
+    def next_card(self):
+        try:
+            self.card = self.cards_it.next()
+        except StopIteration:
+            self.cards_it = iter(self.cards.values())
+            self.card = self.cards_it.next()
 
+    def maybe_put_card(self):
+        if self.board.can_put_card(self.card, self.cell_coords, self.orient):
+            self.board.add_card(self.card, self.cell_coords, self.orient)
 
-        pygame.display.flip()
+    def run(self):
+        self.cards,_ = self.deck
 
+        self.cards_it = iter(self.cards.values())
+        self.next_card()
 
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return
+                elif event.type == pygame.VIDEORESIZE:
+                    self.screen_size = event.w,event.h
+                    self.screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
+                elif event.type == pygame.MOUSEMOTION:
+                    dx,dy = event.rel
+                    x,y = event.pos
+                    self.cell_coords = x/100 - 1, 2 - (y/100 - 1)
+                    self.redraw()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self.maybe_put_card()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        self.orient = (self.orient + 1) % 4
+                        self.redraw()
+                    if event.key == pygame.K_SPACE:
+                        self.next_card()
+                        self.redraw()
+
+            pygame.display.flip()
 
 
 if __name__ == '__main__':
-    run()
+    app = App(screen, screen_size)
+    app.run()
