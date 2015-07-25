@@ -35,9 +35,11 @@ def rotate(pts, orient, center):
         return rot(x0-cx,y0-cy,orient)
 
 
-def draw_card(xy, card, orient):
+# FIXME: this last arg is a hack
+def draw_card(xy, card, orient, center):
     x,y = xy
-    dxdy = (100 + 100*x, 300 - 100*y)
+    cx,cy = center
+    dxdy = (100 + 100*x + cx, 300 - 100*y + cy)
 
     pygame.draw.rect(screen, (0,180,0), pygame.Rect(0,0,100,100).move(*dxdy))
 
@@ -119,13 +121,6 @@ def draw_card(xy, card, orient):
                              10)
 
 
-# TODO: draw tokens
-# TODO: show *resources*
-def draw_board(board):
-    for xy,(card,orient) in board.cards.items():
-        draw_card(xy, card, orient)
-
-
 def draw():
     pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
 
@@ -169,23 +164,23 @@ def draw():
         RoadFragment([south_center]),
     ]), 1)
 
-
     pygame.display.flip()
-
 
 
 class App:
     def __init__(self, screen, screen_size):
         self.screen = screen
         self.screen_size = screen_size
+        self.cx,self.cy = 0,0
+
         self.board = Board()
         self.deck = gen_standard_deck()
         self.orient = 0
 
     def redraw(self):
         pygame.draw.rect(self.screen, (255,255,255), pygame.Rect(0,0,*self.screen_size))
-        draw_board(self.board)
-        draw_card(self.cell_coords, self.card, self.orient)
+        self.draw_board()
+        draw_card(self.cell_coords, self.card, self.orient, (self.cx, self.cy))
 
     def next_card(self):
         try:
@@ -198,11 +193,20 @@ class App:
         if self.board.can_put_card(self.card, self.cell_coords, self.orient):
             self.board.add_card(self.card, self.cell_coords, self.orient)
 
+    # TODO: draw tokens
+    # TODO: show *resources*
+    def draw_board(self):
+        for xy,(card,orient) in self.board.cards.items():
+            draw_card(xy, card, orient, (self.cx,self.cy))
+
+
     def run(self):
         self.cards,_ = self.deck
 
         self.cards_it = iter(self.cards.values())
         self.next_card()
+
+        mouse_down = False
 
         while True:
             for event in pygame.event.get():
@@ -213,11 +217,21 @@ class App:
                     self.screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
                 elif event.type == pygame.MOUSEMOTION:
                     dx,dy = event.rel
-                    x,y = event.pos
-                    self.cell_coords = x/100 - 1, 2 - (y/100 - 1)
+                    if mouse_down:
+                        self.cx += dx
+                        self.cy += dy
+                    else:
+                        x,y = event.pos
+                        self.cell_coords = (x - self.cx) /100 - 1, 2 - ((y - self.cy)/100 - 1)
                     self.redraw()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    self.maybe_put_card()
+                    if event.button == 3:
+                        mouse_down = True
+                    else:
+                        self.maybe_put_card()
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 3:
+                        mouse_down = False
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         self.orient = (self.orient + 1) % 4
