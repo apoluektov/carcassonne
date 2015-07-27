@@ -36,14 +36,15 @@ def rotate(pts, orient, center):
 
 
 # FIXME: this last arg is a hack
-def draw_card(xy, card, orient, center):
+def draw_card(xy, card, orient, center, scale=None):
     x,y = xy
     cx,cy = center
     dxdy = (100 + 100*x + cx, 300 - 100*y + cy)
 
     pygame.draw.rect(screen, (0,180,0), pygame.Rect(0,0,100,100).move(*dxdy))
 
-    for fragment in card.resources:
+    # want to draw roads first -- so the monasteries and castles are drawn on top
+    for fragment in sorted(card.resources, key=lambda r: -ord(r.code())):
         if fragment.code() == 'c':
             sides = fragment.sides
             brown = (140,70,20)
@@ -86,22 +87,31 @@ def draw_card(xy, card, orient, center):
 
             pygame.draw.polygon(screen, brown, translate(rotate(pts,orient,(50,50)), dxdy))
             if fragment.shield:
+                sides = fragment.sides[:]
+                # in standard deck there no castle fragments with just one side that have shields
+                assert(len(sides) >= 2)
+                mx,my = 0,0
                 xyS = 0,0
-                if north_side in sides:
-                    xyS = 50,10
-                elif east_side in sides:
-                    xyS = 90,50
-                elif south_side in sides:
-                    xyS = 50,90
-                elif west_side in sides:
-                    xyS = 10,50
-                pygame.draw.circle(screen, (0,0,100),
-                                   translate(rotate(xyS, orient, (50,50)),
+                # want to be shield shifted towards one of the side
+                for i in range(len(sides)-1):
+                    sides.append(sides[0])
+                for s in sides:
+                    if s == north_side:
+                        mx, my = mx+50, my
+                    if s == east_side:
+                        mx, my = mx+100, my+50
+                    if s == south_side:
+                        mx, my = mx+50, my+100
+                    if s == west_side:
+                        mx, my = mx, my+50
+                mx, my = mx/len(sides), my/len(sides)
+                pygame.draw.circle(screen, (0,0,150),
+                                   translate(rotate((mx,my), orient, (50,50)),
                                              dxdy),
-                                   5)
+                                   10)
 
         elif fragment.code() == 'M':
-            pygame.draw.rect(screen, (200,0,0), pygame.Rect(40,40,20,20).move(*dxdy))
+            pygame.draw.rect(screen, (200,0,0), pygame.Rect(30,30,40,40).move(*dxdy))
         elif fragment.code() == 'r':
             coords = []
             for s in fragment.sides:
@@ -113,12 +123,14 @@ def draw_card(xy, card, orient, center):
                     coords.append((50,100))
                 elif s == west_center:
                     coords.append((0,50))
-            if len(coords) == 1:
+            if len(fragment.sides) == 1:
                 coords.append((50,50))
             pygame.draw.line(screen,(230,230,230),
                              translate(rotate(coords[0], orient, (50,50)), dxdy),
                              translate(rotate(coords[1], orient, (50,50)), dxdy),
                              10)
+            if len(fragment.sides) == 1:
+                pygame.draw.rect(screen, (0,0,0), pygame.Rect(44,44,12,12).move(*dxdy))
 
 
 def draw():
