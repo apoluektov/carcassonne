@@ -36,10 +36,8 @@ def rotate(pts, orient, center):
 
 
 # FIXME: this last arg is a hack
-def draw_card(xy, card, orient, center, scale=None):
-    x,y = xy
-    cx,cy = center
-    dxdy = (100 + 100*x + cx, 300 - 100*y + cy)
+def draw_card(card, orient, topleft):
+    dxdy = topleft
 
     pygame.draw.rect(screen, (0,180,0), pygame.Rect(0,0,100,100).move(*dxdy))
 
@@ -189,10 +187,24 @@ class App:
         self.deck = gen_standard_deck()
         self.orient = 0
 
+        self.draw_shadow = True
+
+    def board_to_screen_coords(self, (x,y)):
+        card_left = 100 + 100*x + self.cx
+        card_top = 300 - 100*y + self.cy
+        return (card_left,card_top)
+
+
     def redraw(self):
         pygame.draw.rect(self.screen, (255,255,255), pygame.Rect(0,0,*self.screen_size))
         self.draw_board()
-        draw_card(self.cell_coords, self.card, self.orient, (self.cx, self.cy))
+        card_left, card_top = self.board_to_screen_coords(self.cell_coords)
+        if self.draw_shadow:
+            pygame.draw.rect(self.screen, self.shadow_color(), (card_left, card_top, 100,100))
+            draw_card(self.card, self.orient, (card_left-10, card_top-10))
+        else:
+            draw_card(self.card, self.orient, (card_left, card_top))
+
 
     def next_card(self):
         try:
@@ -203,13 +215,21 @@ class App:
 
     def maybe_put_card(self):
         if self.board.can_put_card(self.card, self.cell_coords, self.orient):
+            self.draw_shadow = False
             self.board.add_card(self.card, self.cell_coords, self.orient)
 
     # TODO: draw tokens
     # TODO: show *resources*
     def draw_board(self):
         for xy,(card,orient) in self.board.cards.items():
-            draw_card(xy, card, orient, (self.cx,self.cy))
+            draw_card(card, orient, self.board_to_screen_coords(xy))
+
+
+    def shadow_color(self):
+        if self.board.can_put_card(self.card, self.cell_coords, self.orient):
+            return (200,255,200)
+        else:
+            return (255,200,200)
 
 
     def run(self):
@@ -241,16 +261,17 @@ class App:
                         mouse_down = True
                     else:
                         self.maybe_put_card()
+                    self.redraw()
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 3:
                         mouse_down = False
+                    self.draw_shadow = True
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         self.orient = (self.orient + 1) % 4
-                        self.redraw()
                     if event.key == pygame.K_SPACE:
                         self.next_card()
-                        self.redraw()
+                    self.redraw()
 
             pygame.display.flip()
 
