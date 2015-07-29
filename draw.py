@@ -36,10 +36,10 @@ def rotate(pts, orient, center):
 
 
 # FIXME: this last arg is a hack
-def draw_card(card, orient, topleft):
-    dxdy = topleft
+def draw_card(card, orient):
+    img = pygame.Surface((100,100))
 
-    pygame.draw.rect(screen, (0,180,0), pygame.Rect(0,0,100,100).move(*dxdy))
+    pygame.draw.rect(img, (0,180,0), pygame.Rect(0,0,100,100))
 
     # want to draw roads first -- so the monasteries and castles are drawn on top
     for fragment in sorted(card.resources, key=lambda r: -ord(r.code())):
@@ -83,7 +83,7 @@ def draw_card(card, orient, topleft):
                 elif west_side in sides:
                     pts = [(0,100), (20,70), (20,30), (0,0)]
 
-            pygame.draw.polygon(screen, brown, translate(rotate(pts,orient,(50,50)), dxdy))
+            pygame.draw.polygon(img, brown, rotate(pts,orient,(50,50)))
             if fragment.shield:
                 sides = fragment.sides[:]
                 # in standard deck there no castle fragments with just one side that have shields
@@ -103,13 +103,11 @@ def draw_card(card, orient, topleft):
                     if s == west_side:
                         mx, my = mx, my+50
                 mx, my = mx/len(sides), my/len(sides)
-                pygame.draw.circle(screen, (0,0,150),
-                                   translate(rotate((mx,my), orient, (50,50)),
-                                             dxdy),
-                                   10)
+                pygame.draw.circle(img, (0,0,150),
+                                   rotate((mx,my), orient, (50, 50)), 10)
 
         elif fragment.code() == 'M':
-            pygame.draw.rect(screen, (200,0,0), pygame.Rect(30,30,40,40).move(*dxdy))
+            pygame.draw.rect(img, (200,0,0), pygame.Rect(30,30,40,40))
         elif fragment.code() == 'r':
             coords = []
             for s in fragment.sides:
@@ -123,58 +121,13 @@ def draw_card(card, orient, topleft):
                     coords.append((0,50))
             if len(fragment.sides) == 1:
                 coords.append((50,50))
-            pygame.draw.line(screen,(230,230,230),
-                             translate(rotate(coords[0], orient, (50,50)), dxdy),
-                             translate(rotate(coords[1], orient, (50,50)), dxdy),
+            pygame.draw.line(img,(230,230,230),
+                             rotate(coords[0], orient, (50,50)),
+                             rotate(coords[1], orient, (50,50)),
                              10)
             if len(fragment.sides) == 1:
-                pygame.draw.rect(screen, (0,0,0), pygame.Rect(44,44,12,12).move(*dxdy))
-
-
-def draw():
-    pygame.draw.rect(screen, (255,255,255), pygame.Rect(0,0,*screen_size))
-
-    draw_card((-1,0), Card([
-        CastleFragment([north_side], shield=True),
-        MeadowFragment([east_north_half, west_north_half]),
-        MeadowFragment([east_south_half, south_side, west_south_half]),
-        RoadFragment([east_center, west_center]),
-    ]), 0)
-
-    draw_card((0,0), Card([
-        MeadowFragment([north_side, east_side, south_east_half, south_west_half, west_side]),
-        MonasteryFragment(),
-        RoadFragment([south_center]),
-    ]), 0)
-
-    draw_card((1,0), Card([
-        CastleFragment([east_side, west_side], shield=True),
-        MeadowFragment([north_side]),
-        MeadowFragment([south_side]),
-    ]), 0)
-
-    draw_card((-1,1), Card([
-        CastleFragment([north_side, west_side]),
-        MeadowFragment([east_north_half, south_west_half]),
-        MeadowFragment([east_south_half, south_east_half]),
-        RoadFragment([east_center, south_center]),
-    ]), 0)
-
-    draw_card((0,1), Card([
-        CastleFragment([north_side, east_side, west_side], shield=True),
-        MeadowFragment([south_east_half]),
-        MeadowFragment([south_west_half]),
-        RoadFragment([south_center]),
-    ]), 0)
-
-    draw_card((1,1), Card([
-        CastleFragment([north_side, east_side, west_side], shield=True),
-        MeadowFragment([south_east_half]),
-        MeadowFragment([south_west_half]),
-        RoadFragment([south_center]),
-    ]), 1)
-
-    pygame.display.flip()
+                pygame.draw.rect(img, (0,0,0), pygame.Rect(44,44,12,12))
+    return img
 
 
 class App:
@@ -186,12 +139,13 @@ class App:
         self.board = Board()
         self.deck = gen_standard_deck()
         self.orient = 0
+        self.scale = 100.0
 
         self.draw_shadow = True
 
     def board_to_screen_coords(self, (x,y)):
-        card_left = 100 + 100*x + self.cx
-        card_top = 300 - 100*y + self.cy
+        card_left = 300 + self.scale*x + self.cx
+        card_top = 300 - self.scale*y + self.cy
         return (card_left,card_top)
 
 
@@ -200,10 +154,15 @@ class App:
         self.draw_board()
         card_left, card_top = self.board_to_screen_coords(self.cell_coords)
         if self.draw_shadow:
-            pygame.draw.rect(self.screen, self.shadow_color(), (card_left, card_top, 100,100))
-            draw_card(self.card, self.orient, (card_left-10, card_top-10))
+            pygame.draw.rect(self.screen, self.shadow_color(), (card_left, card_top, self.scale,self.scale))
+            img = draw_card(self.card, self.orient)
+            img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
+            d = self.scale / 10
+            self.screen.blit(img, pygame.Rect(card_left-d,card_top-d,self.scale,self.scale))
         else:
-            draw_card(self.card, self.orient, (card_left, card_top))
+            img = draw_card(self.card, self.orient)
+            img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
+            self.screen.blit(img, pygame.Rect(card_left,card_top,self.scale,self.scale))
 
 
     def next_card(self):
@@ -222,7 +181,10 @@ class App:
     # TODO: show *resources*
     def draw_board(self):
         for xy,(card,orient) in self.board.cards.items():
-            draw_card(card, orient, self.board_to_screen_coords(xy))
+            img = draw_card(card, orient)
+            img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
+            screen_x, screen_y = self.board_to_screen_coords(xy)
+            self.screen.blit(img, pygame.Rect(screen_x,screen_y,self.scale,self.scale))
 
 
     def shadow_color(self):
@@ -254,7 +216,7 @@ class App:
                         self.cy += dy
                     else:
                         x,y = event.pos
-                        self.cell_coords = (x - self.cx) /100 - 1, 2 - ((y - self.cy)/100 - 1)
+                        self.cell_coords = (x - self.cx - 300) /int(self.scale), (300 - y + self.cy)/int(self.scale) + 1
                     self.redraw()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 3:
@@ -271,6 +233,10 @@ class App:
                         self.orient = (self.orient + 1) % 4
                     if event.key == pygame.K_SPACE:
                         self.next_card()
+                    if event.key == pygame.K_a:
+                        self.scale /= 1.2
+                    if event.key == pygame.K_s:
+                        self.scale *= 1.2
                     self.redraw()
 
             pygame.display.flip()
