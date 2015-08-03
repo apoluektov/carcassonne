@@ -2,10 +2,6 @@ import pygame
 
 from main import *
 
-screen_size = (640,480)
-screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
-
-
 def translate(pts, (dx,dy)):
     if isinstance(pts,list):
         return [(x0+dx,y0+dy) for (x0,y0) in pts]
@@ -208,7 +204,7 @@ class App:
                     return
                 elif event.type == pygame.VIDEORESIZE:
                     self.screen_size = event.w,event.h
-                    self.screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
+                    self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE)
                 elif event.type == pygame.MOUSEMOTION:
                     dx,dy = event.rel
                     if mouse_down:
@@ -242,6 +238,13 @@ class App:
             pygame.display.flip()
 
 
-if __name__ == '__main__':
+def main():
+    screen_size = (640,480)
+    screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
+
     app = App(screen, screen_size)
     app.run()
+
+
+if __name__ == '__main__':
+    main()
