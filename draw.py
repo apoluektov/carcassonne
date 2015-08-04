@@ -31,98 +31,152 @@ def rotate(pts, orient, center):
         return rot(x0-cx,y0-cy,orient)
 
 
+class Geometry:
+    def __init__(self):
+        self.polygon = None
+        self.polygon_color = None
+        self.circle = None
+        self.circle_color = None
+
+
+class CardView:
+    def __init__(self, card, orient):
+        self.card = card
+        self.orient = orient
+        self.geometries = dict()
+        self.calculate_geometries()
+
+    def calculate_geometries(self):
+        for fragment in self.card.resources:
+            if fragment.code() == 'c':
+                self.geometries[fragment] = self.castle_geometry(fragment)
+            elif fragment.code() == 'M':
+                self.geometries[fragment] = self.monastery_geometry(fragment)
+            elif fragment.code() == 'r':
+                self.geometries[fragment] = self.road_geometry(fragment)
+            elif fragment.code == 'm':
+                # TODO: handle meadows
+                pass
+
+    def castle_geometry(self, fragment):
+        sides = fragment.sides
+        brown = (140,70,20)
+
+        if len(sides) == 4:
+            pts = [(0,0), (100,0), (100,100), (0,100)]
+        elif len(sides) == 3:
+            if not north_side in sides:
+                pts = [(0,0), (30,20), (70,20), (100,0), (100,100), (0,100)]
+            elif not east_side in sides:
+                pts = [(100,0), (80,30), (80,70), (100,100), (0,100), (0,0)]
+            elif not south_side in sides:
+                pts = [(100,100), (70,80), (30,80), (0,100), (0,0), (100,0)]
+            elif not west_side in sides:
+                pts = [(0,100), (20,70), (20,30), (0,0), (100,0), (100,100)]
+        elif len(sides) == 2:
+            if north_side in sides and south_side in sides:
+                pts = [(0,0), (100,0), (80,30), (80,70), (100,100), (0,100), (20,70), (20,30)]
+            elif east_side in sides and west_side in sides:
+                pts = [(100,0), (100,100), (70,80), (30,80), (0,100), (0,0), (30,20), (70,20)]
+            elif north_side in sides and west_side in sides:
+                pts = [(0,0), (100,0), (0,100)]
+            elif north_side in sides and east_side in sides:
+                pts = [(0,0), (100,0), (100,100)]
+            elif south_side in sides and west_side in sides:
+                pts = [(100,100), (0,100), (0,0)]
+            elif south_side in sides and east_side in sides:
+                pts = [(100,100), (0,100), (100,0)]
+        elif len(sides) == 1:
+            if north_side in sides:
+                pts = [(0,0), (30,20), (70,20), (100,0)]
+            elif east_side in sides:
+                pts = [(100,0), (80,30), (80,70), (100,100)]
+            elif south_side in sides:
+                pts = [(100,100), (70,80), (30,80), (0,100)]
+            elif west_side in sides:
+                pts = [(0,100), (20,70), (20,30), (0,0)]
+
+        geom = Geometry()
+        geom.polygon = rotate(pts, self.orient, (50,50))
+        geom.polygon_color = brown
+
+        if fragment.shield:
+            sides = fragment.sides[:]
+            # in standard deck there no castle fragments with just one side that have shields
+            assert(len(sides) >= 2)
+            mx,my = 0,0
+            xyS = 0,0
+            # want to be shield shifted towards one of the side
+            for i in range(len(sides)-1):
+                sides.append(sides[0])
+            for s in sides:
+                if s == north_side:
+                    mx, my = mx+50, my
+                if s == east_side:
+                    mx, my = mx+100, my+50
+                if s == south_side:
+                    mx, my = mx+50, my+100
+                if s == west_side:
+                    mx, my = mx, my+50
+            mx, my = mx/len(sides), my/len(sides)
+
+            geom.circle = (rotate((mx,my), self.orient, (50,50)), 10)
+            geom.circle_color = (0,0,150)
+
+        return geom
+
+    def monastery_geometry(self, fragment):
+        pts = [(30,30), (30,70), (70,70), (70,30)]
+        geom = Geometry()
+        geom.polygon = pts
+        geom.polygon_color = (200,0,0)
+        return geom
+
+    def road_geometry(self, fragment):
+        coords = []
+        for s in fragment.sides:
+            if s == north_center:
+                coords.append((45,0))
+                coords.append((55,0))
+                if len(fragment.sides) == 1:
+                    coords.append((55,45))
+                    coords.append((45,45))
+            elif s == east_center:
+                coords.append((100,45))
+                coords.append((100,55))
+                if len(fragment.sides) == 1:
+                    coords.append((55,55))
+                    coords.append((55,45))
+            elif s == south_center:
+                coords.append((55,100))
+                coords.append((45,100))
+                if len(fragment.sides) == 1:
+                    coords.append((45,55))
+                    coords.append((55,55))
+            elif s == west_center:
+                coords.append((0,55))
+                coords.append((0,45))
+                if len(fragment.sides) == 1:
+                    coords.append((45,45))
+                    coords.append((45,55))
+
+        geom = Geometry()
+        geom.polygon = rotate(coords, self.orient, (50,50))
+        geom.polygon_color = (230,230,230)
+        return geom
+
+
 # FIXME: this last arg is a hack
 def draw_card(card, orient):
     img = pygame.Surface((100,100))
-
     pygame.draw.rect(img, (0,180,0), pygame.Rect(0,0,100,100))
 
-    # want to draw roads first -- so the monasteries and castles are drawn on top
-    for fragment in sorted(card.resources, key=lambda r: -ord(r.code())):
-        if fragment.code() == 'c':
-            sides = fragment.sides
-            brown = (140,70,20)
-
-            pts = None
-            # FIXME: uglier than ugly
-            if len(sides) == 4:
-                pts = [(0,0), (100,0), (100,100), (0,100)]
-            elif len(sides) == 3:
-                if not north_side in sides:
-                    pts = [(0,0), (30,20), (70,20), (100,0), (100,100), (0,100)]
-                elif not east_side in sides:
-                    pts = [(100,0), (80,30), (80,70), (100,100), (0,100), (0,0)]
-                elif not south_side in sides:
-                    pts = [(100,100), (70,80), (30,80), (0,100), (0,0), (100,0)]
-                elif not west_side in sides:
-                    pts = [(0,100), (20,70), (20,30), (0,0), (100,0), (100,100)]
-            elif len(sides) == 2:
-                if north_side in sides and south_side in sides:
-                    pts = [(0,0), (100,0), (80,30), (80,70), (100,100), (0,100), (20,70), (20,30)]
-                elif east_side in sides and west_side in sides:
-                    pts = [(100,0), (100,100), (70,80), (30,80), (0,100), (0,0), (30,20), (70,20)]
-                elif north_side in sides and west_side in sides:
-                    pts = [(0,0), (100,0), (0,100)]
-                elif north_side in sides and east_side in sides:
-                    pts = [(0,0), (100,0), (100,100)]
-                elif south_side in sides and west_side in sides:
-                    pts = [(100,100), (0,100), (0,0)]
-                elif south_side in sides and east_side in sides:
-                    pts = [(100,100), (0,100), (100,0)]
-            elif len(sides) == 1:
-                if north_side in sides:
-                    pts = [(0,0), (30,20), (70,20), (100,0)]
-                elif east_side in sides:
-                    pts = [(100,0), (80,30), (80,70), (100,100)]
-                elif south_side in sides:
-                    pts = [(100,100), (70,80), (30,80), (0,100)]
-                elif west_side in sides:
-                    pts = [(0,100), (20,70), (20,30), (0,0)]
-
-            pygame.draw.polygon(img, brown, rotate(pts,orient,(50,50)))
-            if fragment.shield:
-                sides = fragment.sides[:]
-                # in standard deck there no castle fragments with just one side that have shields
-                assert(len(sides) >= 2)
-                mx,my = 0,0
-                xyS = 0,0
-                # want to be shield shifted towards one of the side
-                for i in range(len(sides)-1):
-                    sides.append(sides[0])
-                for s in sides:
-                    if s == north_side:
-                        mx, my = mx+50, my
-                    if s == east_side:
-                        mx, my = mx+100, my+50
-                    if s == south_side:
-                        mx, my = mx+50, my+100
-                    if s == west_side:
-                        mx, my = mx, my+50
-                mx, my = mx/len(sides), my/len(sides)
-                pygame.draw.circle(img, (0,0,150),
-                                   rotate((mx,my), orient, (50, 50)), 10)
-
-        elif fragment.code() == 'M':
-            pygame.draw.rect(img, (200,0,0), pygame.Rect(30,30,40,40))
-        elif fragment.code() == 'r':
-            coords = []
-            for s in fragment.sides:
-                if s == north_center:
-                    coords.append((50,0))
-                elif s == east_center:
-                    coords.append((100,50))
-                elif s == south_center:
-                    coords.append((50,100))
-                elif s == west_center:
-                    coords.append((0,50))
-            if len(fragment.sides) == 1:
-                coords.append((50,50))
-            pygame.draw.line(img,(230,230,230),
-                             rotate(coords[0], orient, (50,50)),
-                             rotate(coords[1], orient, (50,50)),
-                             10)
-            if len(fragment.sides) == 1:
-                pygame.draw.rect(img, (0,0,0), pygame.Rect(44,44,12,12))
+    card_view = CardView(card, orient)
+    for fragment,geom in card_view.geometries.items():
+        if geom.polygon:
+            pygame.draw.polygon(img, geom.polygon_color, geom.polygon)
+        if geom.circle:
+            pygame.draw.circle(img, geom.circle_color, geom.circle[0], geom.circle[1])
     return img
 
 
