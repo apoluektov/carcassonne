@@ -35,6 +35,8 @@ class Geometry:
     def __init__(self):
         self.polygon = None
         self.polygon_color = None
+        self.polygon2 = None
+        self.polygon2_color = None
         self.circle = None
         self.circle_color = None
 
@@ -47,7 +49,8 @@ class CardView:
         self.calculate_geometries()
 
     def calculate_geometries(self):
-        for fragment in self.card.resources:
+        # want to draw roads first -- so the monasteries and castles are drawn on top
+        for fragment in sorted(self.card.resources, key=lambda r: -ord(r.code())):
             if fragment.code() == 'c':
                 self.geometries[fragment] = self.castle_geometry(fragment)
             elif fragment.code() == 'M':
@@ -60,8 +63,6 @@ class CardView:
 
     def castle_geometry(self, fragment):
         sides = fragment.sides
-        brown = (140,70,20)
-
         if len(sides) == 4:
             pts = [(0,0), (100,0), (100,100), (0,100)]
         elif len(sides) == 3:
@@ -98,7 +99,7 @@ class CardView:
 
         geom = Geometry()
         geom.polygon = rotate(pts, self.orient, (50,50))
-        geom.polygon_color = brown
+        geom.polygon_color = (140,70,20)
 
         if fragment.shield:
             sides = fragment.sides[:]
@@ -163,10 +164,12 @@ class CardView:
         geom = Geometry()
         geom.polygon = rotate(coords, self.orient, (50,50))
         geom.polygon_color = (230,230,230)
+        if len(fragment.sides) == 1:
+            geom.polygon2 = [(44,44), (44,56), (56,56), (56,44)]
+            geom.polygon2_color = (0,0,0)
         return geom
 
 
-# FIXME: this last arg is a hack
 def draw_card(card, orient):
     img = pygame.Surface((100,100))
     pygame.draw.rect(img, (0,180,0), pygame.Rect(0,0,100,100))
@@ -175,6 +178,8 @@ def draw_card(card, orient):
     for fragment,geom in card_view.geometries.items():
         if geom.polygon:
             pygame.draw.polygon(img, geom.polygon_color, geom.polygon)
+        if geom.polygon2:
+            pygame.draw.polygon(img, geom.polygon2_color, geom.polygon2)
         if geom.circle:
             pygame.draw.circle(img, geom.circle_color, geom.circle[0], geom.circle[1])
     return img
