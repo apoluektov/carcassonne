@@ -126,40 +126,58 @@ def draw_card(card, orient):
     return img
 
 
-class App:
-    def __init__(self, screen, screen_size):
+class View:
+    def __init__(self, screen, screen_size, board):
         self.screen = screen
-        self.screen_size = screen_size
-        self.cx,self.cy = 0,0
-
-        self.board = Board()
-        self.deck = gen_standard_deck()
-        self.orient = 0
+        self.size = screen_size
+        # TODO: maybe instead of scale and center have topleft and bottomright? Dunno
         self.scale = 100.0
+        self.scale_factor = 1.2
+        self.center = 0,0
+        self.mouse_pointer = 0,0
 
-        self.draw_shadow = True
+        self.orient = 0
+        self.card_down = False
 
-    def board_to_screen_coords(self, (x,y)):
-        card_left = 300 + self.scale*x + self.cx
-        card_top = 300 - self.scale*y + self.cy
-        return (card_left,card_top)
+        self.board = board
+        self.card = None
+        # TODO: deck object?
+        self.cards, self.freqs = gen_standard_deck()
+        self.cards_it = iter(self.cards.values())
 
+        self.dirty = True
 
-    def redraw(self):
-        pygame.draw.rect(self.screen, (255,255,255), pygame.Rect(0,0,*self.screen_size))
-        self.draw_board()
-        card_left, card_top = self.board_to_screen_coords(self.cell_coords)
-        if self.draw_shadow:
-            pygame.draw.rect(self.screen, self.shadow_color(), (card_left, card_top, self.scale,self.scale))
-            img = draw_card(self.card, self.orient)
-            img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
-            d = self.scale / 10
-            self.screen.blit(img, pygame.Rect(card_left-d,card_top-d,self.scale,self.scale))
-        else:
-            img = draw_card(self.card, self.orient)
-            img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
-            self.screen.blit(img, pygame.Rect(card_left,card_top,self.scale,self.scale))
+    def resize(self, new_size):
+        self.size = new_size
+        self.screen = pygame.display.set_mode(self.size, pygame.RESIZABLE)
+        self.dirty = True
 
+    def move_center(self, (dx,dy)):
+        self.center = (self.center[0] + dx, self.center[1] + dy)
+        self.dirty = True
+
+    def zoom_in(self):
+        self.scale *= self.scale_factor
+        self.dirty = True
+
+    def zoom_out(self):
+        self.scale /= self.scale_factor
+        self.dirty = True
+
+    def rotate_current_card(self):
+        self.orient = (self.orient + 1) % 4
+        self.dirty = True
+
+    def move_current_card_to(self, (x,y)):
+        self.mouse_pointer = x,y
+        self.dirty = True
+
+    def maybe_put_current_card(self):
+        model_coords = self.screen_to_model(self.mouse_pointer)
+        if self.board.can_put_card(self.card, model_coords, self.orient):
+            self.board.add_card(self.card, model_coords, self.orient)
+            self.card_down = True
+            self.dirty = True
 
     def next_card(self):
         try:
@@ -167,75 +185,102 @@ class App:
         except StopIteration:
             self.cards_it = iter(self.cards.values())
             self.card = self.cards_it.next()
+        self.dirty = True
 
-    def maybe_put_card(self):
-        if self.board.can_put_card(self.card, self.cell_coords, self.orient):
-            self.draw_shadow = False
-            self.board.add_card(self.card, self.cell_coords, self.orient)
+    def needs_redraw(self):
+        return self.dirty
 
-    # TODO: draw tokens
-    # TODO: show *resources*
-    def draw_board(self):
-        for xy,(card,orient) in self.board.cards.items():
+    def redraw(self):
+        pygame.draw.rect(self.screen, (255,255,255), pygame.Rect(0,0,*self.size))
+
+        model_coords = self.screen_to_model(self.mouse_pointer)
+        left0, top0 = self.model_to_screen(model_coords)
+
+        # the shadow
+        if not self.card_down:
+            if self.board.can_put_card(self.card, model_coords, self.orient):
+                color = (200,255,200)
+            else:
+                color = (255,200,200)
+            pygame.draw.rect(self.screen, color, (left0, top0, self.scale, self.scale))
+
+        # the board
+        for xy, (card, orient) in self.board.cards.items():
             img = draw_card(card, orient)
             img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
-            screen_x, screen_y = self.board_to_screen_coords(xy)
-            self.screen.blit(img, pygame.Rect(screen_x,screen_y,self.scale,self.scale))
+            left, top = self.model_to_screen(xy)
+            self.screen.blit(img, pygame.Rect(left, top, self.scale, self.scale))
 
-
-    def shadow_color(self):
-        if self.board.can_put_card(self.card, self.cell_coords, self.orient):
-            return (200,255,200)
+        # the card
+        if not self.card_down:
+            dx, dy = self.scale/10, self.scale/10
         else:
-            return (255,200,200)
+            dx, dy = 0, 0
+        img = draw_card(self.card, self.orient)
+        img = pygame.transform.scale(img,(int(self.scale), int(self.scale)))
+        self.screen.blit(img, pygame.Rect(left0-dx, top0-dy, self.scale, self.scale))
+
+
+        pygame.display.flip()
+        self.dirty = False
+
+
+    def model_to_screen(self, (x,y)):
+        left = 300 + self.scale*x + self.center[0]
+        top = 300 - self.scale*y + self.center[1]
+        return left, top
+
+    def screen_to_model(self, (x,y)):
+        cx,cy = self.center
+        s = int(self.scale)
+        return (x - cx - 300)/s,  (300 - y + cy)/s + 1
+
+
+class App:
+    def __init__(self, screen, screen_size):
+        board = Board()
+        self.view = View(screen, screen_size, board)
 
 
     def run(self):
-        self.cards,_ = self.deck
-
-        self.cards_it = iter(self.cards.values())
-        self.next_card()
-
-        mouse_down = False
+        view = self.view
+        view.next_card()
+        right_mouse_down = False
 
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return
                 elif event.type == pygame.VIDEORESIZE:
-                    self.screen_size = event.w,event.h
-                    self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE)
+                    view.resize((event.w, event.h))
                 elif event.type == pygame.MOUSEMOTION:
                     dx,dy = event.rel
-                    if mouse_down:
-                        self.cx += dx
-                        self.cy += dy
-                    else:
-                        x,y = event.pos
-                        self.cell_coords = (x - self.cx - 300) /int(self.scale), (300 - y + self.cy)/int(self.scale) + 1
-                    self.redraw()
+                    if right_mouse_down:
+                        view.move_center(event.rel)
+                    view.move_current_card_to(event.pos)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 3:
-                        mouse_down = True
+                        right_mouse_down = True
                     else:
-                        self.maybe_put_card()
-                    self.redraw()
+                        view.maybe_put_current_card()
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 3:
-                        mouse_down = False
-                    self.draw_shadow = True
+                        right_mouse_down = False
+                    else:
+                        # FIXME: meh, method
+                        view.card_down = False
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
-                        self.orient = (self.orient + 1) % 4
+                        view.rotate_current_card()
                     if event.key == pygame.K_SPACE:
-                        self.next_card()
+                        view.next_card()
                     if event.key == pygame.K_a:
-                        self.scale /= 1.2
+                        view.zoom_out()
                     if event.key == pygame.K_s:
-                        self.scale *= 1.2
-                    self.redraw()
+                        view.zoom_in()
 
-            pygame.display.flip()
+            if view.needs_redraw():
+                view.redraw()
 
 
 def main():
