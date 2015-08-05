@@ -45,18 +45,18 @@ class CardView:
     def __init__(self, card, orient):
         self.card = card
         self.orient = orient
-        self.geometries = dict()
+        self.geometries = []
         self.calculate_geometries()
 
     def calculate_geometries(self):
         # want to draw roads first -- so the monasteries and castles are drawn on top
         for fragment in sorted(self.card.resources, key=lambda r: -ord(r.code())):
             if fragment.code() == 'c':
-                self.geometries[fragment] = self.castle_geometry(fragment)
+                self.geometries.append(self.castle_geometry(fragment))
             elif fragment.code() == 'M':
-                self.geometries[fragment] = self.monastery_geometry(fragment)
+                self.geometries.append(self.monastery_geometry(fragment))
             elif fragment.code() == 'r':
-                self.geometries[fragment] = self.road_geometry(fragment)
+                self.geometries.append(self.road_geometry(fragment))
             elif fragment.code == 'm':
                 # TODO: handle meadows
                 pass
@@ -175,7 +175,7 @@ def draw_card(card, orient):
     pygame.draw.rect(img, (0,180,0), pygame.Rect(0,0,100,100))
 
     card_view = CardView(card, orient)
-    for fragment,geom in card_view.geometries.items():
+    for geom in card_view.geometries:
         if geom.polygon:
             pygame.draw.polygon(img, geom.polygon_color, geom.polygon)
         if geom.polygon2:
@@ -202,7 +202,7 @@ class View:
         self.card = None
         # TODO: deck object?
         self.cards, self.freqs = gen_standard_deck()
-        self.cards_it = iter(self.cards.values())
+        self.card_idx = -1
 
         self.dirty = True
 
@@ -239,11 +239,13 @@ class View:
             self.dirty = True
 
     def next_card(self):
-        try:
-            self.card = self.cards_it.next()
-        except StopIteration:
-            self.cards_it = iter(self.cards.values())
-            self.card = self.cards_it.next()
+        self.card_idx = (self.card_idx + 1) % len(self.cards)
+        self.card = self.cards[chr(ord('A') + self.card_idx)]
+        self.dirty = True
+
+    def previous_card(self):
+        self.card_idx = (self.card_idx - 1) % len(self.cards)
+        self.card = self.cards[chr(ord('A') + self.card_idx)]
         self.dirty = True
 
     def needs_redraw(self):
@@ -331,8 +333,10 @@ class App:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         view.rotate_current_card()
-                    if event.key == pygame.K_SPACE:
+                    if event.key == pygame.K_RIGHTBRACKET:
                         view.next_card()
+                    if event.key == pygame.K_LEFTBRACKET:
+                        view.previous_card()
                     if event.key == pygame.K_a:
                         view.zoom_out()
                     if event.key == pygame.K_s:
