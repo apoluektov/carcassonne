@@ -81,16 +81,34 @@ class CardView:
         self.geometries = []
         self.calculate_geometries()
 
+    def gen_image(self):
+        img = pygame.Surface((100,100))
+        pygame.draw.rect(img, (0,180,0), pygame.Rect(0,0,100,100))
+
+        for fragment,geom in self.geometries:
+            if geom.polygon:
+                pygame.draw.polygon(img, geom.polygon_color, geom.polygon)
+            if geom.polygon2:
+                pygame.draw.polygon(img, geom.polygon2_color, geom.polygon2)
+            if geom.circle:
+                pygame.draw.circle(img, geom.circle_color, geom.circle[0], geom.circle[1])
+        return img
+
+    def hit(self,(rel_x,rel_y), func):
+        for f,g in self.geometries:
+            if is_point_in_polygon((rel_x,rel_y), g.polygon):
+                func(f,g)
+
     def calculate_geometries(self):
         # want to draw roads first -- so the monasteries and castles are drawn on top
-        for fragment in sorted(self.card.resources, key=lambda r: -ord(r.code())):
-            if fragment.code() == 'c':
-                self.geometries.append(self.castle_geometry(fragment))
-            elif fragment.code() == 'M':
-                self.geometries.append(self.monastery_geometry(fragment))
-            elif fragment.code() == 'r':
-                self.geometries.append(self.road_geometry(fragment))
-            elif fragment.code == 'm':
+        for f in sorted(self.card.resources, key=lambda r: -ord(r.code())):
+            if f.code() == 'c':
+                self.geometries.append((f, self.castle_geometry(f)))
+            elif f.code() == 'M':
+                self.geometries.append((f, self.monastery_geometry(f)))
+            elif f.code() == 'r':
+                self.geometries.append((f, self.road_geometry(f)))
+            elif f.code == 'm':
                 # TODO: handle meadows
                 pass
 
@@ -203,21 +221,6 @@ class CardView:
         return geom
 
 
-def draw_card(card, orient):
-    img = pygame.Surface((100,100))
-    pygame.draw.rect(img, (0,180,0), pygame.Rect(0,0,100,100))
-
-    card_view = CardView(card, orient)
-    for geom in card_view.geometries:
-        if geom.polygon:
-            pygame.draw.polygon(img, geom.polygon_color, geom.polygon)
-        if geom.polygon2:
-            pygame.draw.polygon(img, geom.polygon2_color, geom.polygon2)
-        if geom.circle:
-            pygame.draw.circle(img, geom.circle_color, geom.circle[0], geom.circle[1])
-    return img
-
-
 class View:
     def __init__(self, screen, screen_size, board):
         self.screen = screen
@@ -236,6 +239,8 @@ class View:
         # TODO: deck object?
         self.cards, self.freqs = gen_standard_deck()
         self.card_idx = -1
+        self.draw_current_card = True
+        self.card_views = dict()
 
         self.dirty = True
 
@@ -260,11 +265,35 @@ class View:
         self.orient = (self.orient + 1) % 4
         self.dirty = True
 
-    def move_current_card_to(self, (x,y)):
+    def move_mouse_pointer_to(self, (x,y)):
+        self.mouse_pointer = x,y
+        model_coords = self.screen_to_model(self.mouse_pointer)
+        hit = self.board.cards.get(model_coords)
+        if hit:
+            self.card_hovered, o = hit
+            self.draw_current_card = False
+            self.fill_hovered_red()
+        else:
+            self.draw_current_card = True
+        self.dirty = True
+
+    def fill_hovered_red(self):
+        mx,my = self.screen_to_model(self.mouse_pointer)
+        x,y = self.mouse_pointer
+        card_view = self.card_views[(mx,my)]
+        left, top = self.model_to_screen((mx,my))
+        rel_x, rel_y = x-left, y-top
+
+        def red(fragment,geom):
+            geom.polygon_color = (255,0,0)
+        card_view.hit((rel_x,rel_y), red)
+
+
+    def left_mouse_down(self, (x,y)):
         self.mouse_pointer = x,y
         self.dirty = True
 
-    def maybe_put_current_card(self):
+    def left_mouse_down(self):
         model_coords = self.screen_to_model(self.mouse_pointer)
         if self.board.can_put_card(self.card, model_coords, self.orient):
             self.board.add_card(self.card, model_coords, self.orient)
@@ -300,20 +329,25 @@ class View:
 
         # the board
         for xy, (card, orient) in self.board.cards.items():
-            img = draw_card(card, orient)
+            card_view = self.card_views.get(xy)
+            if not card_view:
+                card_view = CardView(card, orient)
+                self.card_views[xy] = card_view
+            img = card_view.gen_image()
             img = pygame.transform.scale(img,(int(self.scale),int(self.scale)))
             left, top = self.model_to_screen(xy)
             self.screen.blit(img, pygame.Rect(left, top, self.scale, self.scale))
 
-        # the card
-        if not self.card_down:
-            dx, dy = self.scale/10, self.scale/10
-        else:
-            dx, dy = 0, 0
-        img = draw_card(self.card, self.orient)
-        img = pygame.transform.scale(img,(int(self.scale), int(self.scale)))
-        self.screen.blit(img, pygame.Rect(left0-dx, top0-dy, self.scale, self.scale))
-
+        if self.draw_current_card:
+            # the card
+            if not self.card_down:
+                dx, dy = self.scale/10, self.scale/10
+            else:
+                dx, dy = 0, 0
+            card_view = CardView(self.card, self.orient)
+            img = card_view.gen_image()
+            img = pygame.transform.scale(img,(int(self.scale), int(self.scale)))
+            self.screen.blit(img, pygame.Rect(left0-dx, top0-dy, self.scale, self.scale))
 
         pygame.display.flip()
         self.dirty = False
@@ -351,12 +385,12 @@ class App:
                     dx,dy = event.rel
                     if right_mouse_down:
                         view.move_center(event.rel)
-                    view.move_current_card_to(event.pos)
+                    view.move_mouse_pointer_to(event.pos)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 3:
                         right_mouse_down = True
                     else:
-                        view.maybe_put_current_card()
+                        view.left_mouse_down()
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 3:
                         right_mouse_down = False
@@ -400,5 +434,6 @@ class IntersectionTest(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    main()
     unittest.main()
     main()
