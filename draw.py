@@ -1,3 +1,4 @@
+import unittest
 import pygame
 
 from main import *
@@ -39,6 +40,38 @@ class Geometry:
         self.polygon2_color = None
         self.circle = None
         self.circle_color = None
+
+
+def is_point_in_polygon(p, polygon):
+    # ray casting even odd
+    n = 0
+    for i in range(len(polygon)):
+        s1,s2 = polygon[i%len(polygon)],polygon[(i+1)%len(polygon)]
+        s1,s2 = sorted((s1,s2))
+        S1x,S1y = s1
+        S2x,S2y = s2
+        Px,Py = p
+        Sxmin = min(S1x,S2x)
+        Sxmax = max(S1x,S2x)
+        Symin = min(S1y,S2y)
+        Symax = min(S1y,S2y)
+
+        if min(S1y,S2y) > Py:
+            if Sxmin <= Px and Px < Sxmax:
+                n += 1
+        elif max(S1y,S2y) < Py:
+            pass
+        else:
+            d1 = abs((S1y - Py) * (Px - S2x))
+            d2 = abs((S2y - Py) * (Px - S1x))
+            if S1y == Symax:
+                if d1 >= d2:
+                    n += 1
+            else:
+                if d1 <= d2:
+                    n += 1
+
+    return n % 2 == 1
 
 
 class CardView:
@@ -354,5 +387,18 @@ def main():
     app.run()
 
 
+class IntersectionTest(unittest.TestCase):
+    def test1(self):
+        pts = [(0,0), (30,20), (70,20), (100,0), (100,100), (0,100)]
+        self.assertTrue(is_point_in_polygon((50,50), pts))
+        self.assertFalse(is_point_in_polygon((50,0), pts))
+        self.assertTrue(is_point_in_polygon((30,50), pts))
+        self.assertFalse(is_point_in_polygon((10,10), pts))
+        self.assertFalse(is_point_in_polygon((30,10), pts))
+        self.assertFalse(is_point_in_polygon((40,20), pts))
+        self.assertTrue(is_point_in_polygon((0,0), pts))
+
+
 if __name__ == '__main__':
+    unittest.main()
     main()
