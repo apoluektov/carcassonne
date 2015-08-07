@@ -36,10 +36,10 @@ class Geometry:
     def __init__(self):
         self.polygon = None
         self.polygon_color = None
-        self.polygon2 = None
-        self.polygon2_color = None
         self.circle = None
         self.circle_color = None
+        self.additional_polygons = []
+        self.additional_polygon_colors = []
 
 
 def is_point_in_polygon(p, polygon):
@@ -88,10 +88,13 @@ class CardView:
         for fragment,geom in self.geometries:
             if geom.polygon:
                 pygame.draw.polygon(img, geom.polygon_color, geom.polygon)
-            if geom.polygon2:
-                pygame.draw.polygon(img, geom.polygon2_color, geom.polygon2)
             if geom.circle:
                 pygame.draw.circle(img, geom.circle_color, geom.circle[0], geom.circle[1])
+            # FIXME: bundle geoms and colors
+            for i in range(0, len(geom.additional_polygons)):
+                pygame.draw.polygon(img, geom.additional_polygon_colors[i],
+                                    geom.additional_polygons[i])
+
         return img
 
     def hit(self,(rel_x,rel_y), func):
@@ -172,8 +175,13 @@ class CardView:
                     mx, my = mx, my+50
             mx, my = mx/len(sides), my/len(sides)
 
-            geom.circle = (rotate((mx,my), self.orient, (50,50)), 10)
-            geom.circle_color = (0,0,150)
+            r = 7
+            for (x,y), clr, in zip([(mx-r,my-r),(mx,my-r),(mx-r,my),(mx,my)],
+                           [(50,50,200), (200,200,200), (200,200,200), (50,50,200)]):
+                pts = [(x,y),(x+r,y),(x+r,y+r),(x,y+r)]
+                pts = rotate(pts, self.orient, (50,50))
+                geom.additional_polygons.append(pts)
+                geom.additional_polygon_colors.append(clr)
 
         return geom
 
@@ -216,8 +224,8 @@ class CardView:
         geom.polygon = rotate(coords, self.orient, (50,50))
         geom.polygon_color = (230,230,230)
         if len(fragment.sides) == 1:
-            geom.polygon2 = [(44,44), (44,56), (56,56), (56,44)]
-            geom.polygon2_color = (0,0,0)
+            geom.additional_polygons.append([(44,44), (44,56), (56,56), (56,44)])
+            geom.additional_polygon_colors.append((0,0,0))
         return geom
 
 
